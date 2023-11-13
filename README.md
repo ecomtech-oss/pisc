@@ -18,7 +18,7 @@ It can be used to automatically check the security of public OCI-images before r
 
 ### Quick Start via Docker
 ```sh
-docker run kapistka/disc:latest /bin/bash scan.sh -l -v <vulners-api-key> -m <virustotal-api-key> kapistka/log4shell:0.0.3-nonroot
+docker run kapistka/pisc:latest /bin/bash scan.sh -l -v <vulners-api-key> -m <virustotal-api-key> kapistka/log4shell:0.0.3-nonroot
 ```
 
 ### Common Start
