@@ -82,8 +82,12 @@ for (( i=0; i<${#LIST_TAG[@]}; i++ ));
 do
     if [[ ${LIST_TAG[$i]} == *"."* ]] &&
     [[ ${LIST_TAG[$i]} != *"amd"* ]] &&
+    [[ ${LIST_TAG[$i]} != *"amd64"* ]] &&
     [[ ${LIST_TAG[$i]} != *"arm"* ]] &&
+    [[ ${LIST_TAG[$i]} != *"arm64"* ]] &&
     [[ ${LIST_TAG[$i]} != *"ubi"* ]] &&
+    [[ ${LIST_TAG[$i]} != *"s390x"* ]] &&
+    [[ ${LIST_TAG[$i]} != *"ppc64le"* ]] &&
     [[ ${LIST_TAG[$i]} =~ [0-9] ]]; then	  
         echo ${LIST_TAG[$i]} >> $TMP_FILE
     fi    

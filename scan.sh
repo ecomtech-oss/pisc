@@ -12,7 +12,7 @@ error_exit()
 }
 
 version() {
-    echo v0.0.11
+    echo v0.0.12
 }
 
 usage() {
@@ -37,12 +37,12 @@ Gives a result = 1 if any:
  - has a dangerous misconfigurations
  - use non-version tag (:latest)
 
-Usage: $(basename "${BASH_SOURCE[0]}") [flags] [image_link or image_list]
+Usage: $(basename "${BASH_SOURCE[0]}") [flags] [image_link]
 
 Flags:
   -d, --date                      check old build date (365 by default)
-  -e, --exploits                  check exploitable vulnerabilities by trivy and inthewild.io
   --d-days int                    check old build date. Specify the number of days for old build date, example: --d-days 180
+  -e, --exploits                  check exploitable vulnerabilities by trivy and inthewild.io
   -f, --file string               all images from file will be checked. Example: -f images.txt
   -h, --help                      print this help
   -i, --image string              only this image will be checked. Example: -i r0binak/mtkpi:v1.3
@@ -242,11 +242,14 @@ scan_image() {
 
     # exploitable vulnerabilities scanning
     if [ "$CHECK_EXPLOITS" = true ]; then
+        PARAMS=''
         if [ ! -z "$VULNERS_API_KEY" ]; then
-            /bin/bash $SCRIPTPATH/scan-trivy.sh --dont-output-result -i $IMAGE_LINK ----vulners-key $VULNERS_API_KEY
-        else
-            /bin/bash $SCRIPTPATH/scan-trivy.sh --dont-output-result -i $IMAGE_LINK
-        fi    
+            PARAMS=$PARAMS" --vulners-key $VULNERS_API_KEY"
+        fi
+        if [ ! -z "$TRIVY_SERVER" ]; then
+            PARAMS=$PARAMS" --trivy-server $TRIVY_SERVER --trivy-token $TRIVY_TOKEN"
+        fi
+        /bin/bash $SCRIPTPATH/scan-trivy.sh --dont-output-result -i $IMAGE_LINK $PARAMS
         TRIVY_RESULT_MESSAGE=$(<$SCRIPTPATH/scan-trivy.result)
         if [ "$TRIVY_RESULT_MESSAGE" != "OK" ]; then
             IS_EXPLOITABLE=true
