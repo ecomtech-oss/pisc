@@ -32,6 +32,10 @@ TRIVY_SERVER=''
 TRIVY_TOKEN=''
 VULNERS_API_KEY=''
 
+C_RED='\033[0;31m'
+C_NIL='\033[0m'
+EMOJI_EXPLOIT='\U1F41E' # lady beetle
+
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
@@ -177,10 +181,10 @@ if [ "$IS_EXPLOITABLE" = true ]; then
     column -t -s' ' $TMP_FILE > $RES_FILE
     TRIVY_RESULT_MESSAGE=$(<$RES_FILE)
     # end draw beauty table
-    TRIVY_RESULT_MESSAGE="$IMAGE_LINK >>> detected exploitable vulnerabilities"$'\n'$TRIVY_RESULT_MESSAGE 
+    TRIVY_RESULT_MESSAGE="$EMOJI_EXPLOIT $C_RED$IMAGE_LINK$C_NIL >>> detected exploitable vulnerabilities"$'\n'$TRIVY_RESULT_MESSAGE 
     echo "$TRIVY_RESULT_MESSAGE" > $RES_FILE
     if [ "$DONT_OUTPUT_RESULT" == "false" ]; then  
-        echo "$TRIVY_RESULT_MESSAGE"
+        echo -e "$TRIVY_RESULT_MESSAGE"
     fi 
 else
     if [ "$DONT_OUTPUT_RESULT" == "false" ]; then 

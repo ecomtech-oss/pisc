@@ -25,7 +25,7 @@ result_exit()
 {
     echo "$CREATED_DATE" > $RES_FILE
     if [ "$DONT_OUTPUT_RESULT" == "false" ]; then  
-        echo "$IMAGE_LINK >>> $CREATED_DATE               "
+        echo "$IMAGE_LINK >>> $CREATED_DATE                 "
     fi    
     exit 0
 }

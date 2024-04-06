@@ -53,12 +53,8 @@ fi
 rm -f $SCRIPTPATH/image.tar &>/dev/null
 # copy image to archive
 echo -ne "  $IMAGE_LINK >>> copy\033[0K\r"
-skopeo copy "docker://$IMAGE_LINK" "docker-archive:$SCRIPTPATH/image.tar" &>/dev/null
-#if a copy error exit the function
-if [ $? -ne 0 ]; then
-    echo "$IMAGE_LINK >>> can't copy, check image name and tag"
-    exit 1
-fi
+skopeo copy "docker://$IMAGE_LINK" "docker-archive:$SCRIPTPATH/image.tar" &>/dev/null \
+    || error_exit "$IMAGE_LINK >>> can't copy, check image name and tag"   
 
 echo -ne "  $IMAGE_LINK >>> unpack image\033[0K\r"
 #Sometimes rm and tar occurs an error

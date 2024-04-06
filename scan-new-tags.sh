@@ -25,6 +25,10 @@ error_exit()
 DONT_OUTPUT_RESULT=false
 IMAGE_LINK=''
 
+C_RED='\033[0;31m'
+C_NIL='\033[0m'
+EMOJI_INFO='\U1F4A1' # bulb
+
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
@@ -137,17 +141,18 @@ done
 # draw beauty table of versions
 echo $STRING_VER_NEW > $TMP_FILE
 xargs -n5 < $TMP_FILE | column -t -s' ' > $SORT_FILE
-STRING_VER_NEW=$(<$SORT_FILE)
+sed 's/^/  /' $SORT_FILE > $TMP_FILE
+STRING_VER_NEW=$(<$TMP_FILE)
 
 # result: output to console and write to file
 RESULT_MESSAGE="$CREATED_DATE_LAST"
 if [ ! -z "${STRING_VER_NEW}" ]; then
-    RESULT_MESSAGE=${RESULT_MESSAGE}$'\n'"${IMAGE_LINK} >>> use a newer tags:"
+    RESULT_MESSAGE=${RESULT_MESSAGE}$'\n'"$EMOJI_INFO $C_RED${IMAGE_LINK}$C_NIL >>> use a newer tags:"
     RESULT_MESSAGE=${RESULT_MESSAGE}$'\n'$STRING_VER_NEW
 fi
 echo "$RESULT_MESSAGE" > $RES_FILE
 if [ "${DONT_OUTPUT_RESULT}" == "false" ]; then  
-    echo "$RESULT_MESSAGE"
+    echo -e "$RESULT_MESSAGE"
 fi 
 
 exit 0

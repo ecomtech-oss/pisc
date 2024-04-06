@@ -12,7 +12,7 @@ error_exit()
 }
 
 version() {
-    echo v0.0.12
+    echo v0.0.13
 }
 
 usage() {
@@ -31,10 +31,10 @@ Author: @kapistka, 2024
           |||||\______/
 
 Gives a result = 1 if any:
- - image older then N days
- - has exploitable vulnerabilities
  - contains malware
+ - has exploitable vulnerabilities
  - has a dangerous misconfigurations
+ - image older then N days
  - use non-version tag (:latest)
 
 Usage: $(basename "${BASH_SOURCE[0]}") [flags] [image_link]
@@ -75,6 +75,19 @@ VIRUSTOTAL_API_KEY=''
 VULNERS_API_KEY=''
 FILE_SCAN=''
 IS_LIST_IMAGES=false
+
+C_BLU='\033[1;34m'
+C_GRN='\033[1;32m'
+C_NIL='\033[0m'
+C_RED='\033[0;31m'
+EMOJI_ON='\U2705' # white heavy check mark
+EMOJI_OFF='\U274C' # cross mark 
+EMOJI_OK='\U1F44D' # thumbs up
+EMOJI_LATEST='\U1F504' # anticlockwise downwards and upwards open circle arrows
+EMOJI_OLD='\U1F4C6' # tear-off calendar
+
+U_LINE2='\U02550\U02550\U02550\U02550\U02550\U02550\U02550\U02550'
+U_LINE=$U_LINE2$U_LINE2$U_LINE2$U_LINE2$U_LINE2
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
@@ -181,6 +194,57 @@ if [ "$CHECK_EXPLOITS" = false ] && [ "$CHECK_DATE" = false ] &&  [ "$CHECK_LATE
     exit 2
 fi
 
+# check tools exist
+IS_TOOLS_NOT_EXIST=false
+TOOLS_NOT_EXIST_STR=''
+LIST_TOOLS=(column curl file find jq sha256sum skopeo tar trivy)
+for (( i=0; i<${#LIST_TOOLS[@]}; i++ ));
+do
+    if ! command -v ${LIST_TOOLS[$i]} &> /dev/null
+    then
+        IS_TOOLS_NOT_EXIST=true
+        TOOLS_NOT_EXIST_STR=$TOOLS_NOT_EXIST_STR$'\n  '${LIST_TOOLS[$i]}
+    fi
+done
+if [ "$IS_TOOLS_NOT_EXIST" = true ] ; then
+    echo "First you need to install these tools:$TOOLS_NOT_EXIST_STR"
+    exit 3
+fi   
+
+# check GNU-version of tar
+if ! `tar --version | grep -q "GNU"`; then
+    echo "You need to install GNU-version of tar"
+    exit 3
+fi
+
+# show enable/disable options
+echo -e "$U_LINE"
+EMOJI_OPT=$EMOJI_OFF
+if [ ! -z "$VIRUSTOTAL_API_KEY" ]; then
+    EMOJI_OPT=$EMOJI_ON
+fi
+echo -e "$EMOJI_OPT scan malware"
+EMOJI_OPT=$EMOJI_OFF
+if [ "$CHECK_EXPLOITS" = true ] ; then
+    EMOJI_OPT=$EMOJI_ON
+fi
+echo -e "$EMOJI_OPT scan exploitable vulnerabilities"
+EMOJI_OPT=$EMOJI_OFF
+if [ "$CHECK_MISCONFIG" = true ] ; then
+    EMOJI_OPT=$EMOJI_ON
+fi
+echo -e "$EMOJI_OPT scan building misconfig"
+EMOJI_OPT=$EMOJI_OFF
+if [ "$CHECK_DATE" = true ] ; then
+    EMOJI_OPT=$EMOJI_ON
+fi
+echo -e "$EMOJI_OPT check image older then $OLD_BUILD_DAYS days"
+EMOJI_OPT=$EMOJI_OFF
+if [ "$CHECK_LATEST" = true ] ; then
+    EMOJI_OPT=$EMOJI_ON
+fi
+echo -e "$EMOJI_OPT check used non-version tag (:latest)"
+
 # single image verification
 scan_image() {
     CREATED_DATE='01.01.1970'
@@ -194,7 +258,7 @@ scan_image() {
 
     # redefine image link (function execute from file-list too)
     IMAGE_LINK=$1
-    echo "____________________"
+    echo -e "$U_LINE"
 
     # non-version tag checking (evolution of "latest")
     if [ "$CHECK_LATEST" = true ]; then
@@ -266,31 +330,31 @@ scan_image() {
 
     # result output
     # separating strip for CI
-    echo -ne "__________                  \033[0K\r"
+    echo -ne "$U_LINE\033[0K\r"
     # output of the result by the non-version tag
     if [ "$IS_LATEST" = true ]; then
-        echo "$IMAGE_LINK >>> non-version tag                      "
+        echo -e "$C_RED$IMAGE_LINK$C_NIL >>> $EMOJI_LATEST non-version tag                      "
     fi
     # echo misconfig result
     if [ "$IS_MISCONFIG" = true ]; then
-        echo "$MISCONFIG_RESULT_MESSAGE"
+        echo -e "$MISCONFIG_RESULT_MESSAGE"
     fi  
     # echo virustotal result
     if [ "$IS_MALWARE" = true ]; then
-        echo "$VIRUSTOTAL_RESULT_MESSAGE"
+        echo -e "$VIRUSTOTAL_RESULT_MESSAGE"
     fi
     # echo trivy + inthewild (or vulners) result
     if [ "$IS_EXPLOITABLE" = true ]; then
-        echo "$TRIVY_RESULT_MESSAGE"
+        echo -e "$TRIVY_RESULT_MESSAGE"
     fi
     # additional output of newest date and newest tags
     if [ "$IS_OLD" = true ] || [ "$IS_EXPLOITABLE" = true ] ; then
         DIFF_DAYS=$(( ($(date -d $CREATED_DATE_LAST +%s) - $(date -d $CREATED_DATE +%s)) / 86400 ))
         if (( $DIFF_DAYS > 0 )); then
-            echo "$IMAGE_LINK >>> created: $CREATED_DATE. Last update: $CREATED_DATE_LAST"
-            echo "$NEW_TAGS_RESULT_MESSAGE"
+            echo -e "$EMOJI_OLD $C_RED$IMAGE_LINK$C_NIL >>> created: $CREATED_DATE. Last update: $CREATED_DATE_LAST"
+            echo -e "$NEW_TAGS_RESULT_MESSAGE"
         else
-            echo "$IMAGE_LINK >>> created: $CREATED_DATE. Find another image"
+            echo -e "$EMOJI_OLD $C_RED$IMAGE_LINK$C_NIL >>> created: $CREATED_DATE. Find another image"
         fi
     fi 
 
@@ -298,7 +362,7 @@ scan_image() {
     if [ "$IS_OLD" = true ] ||  [ "$IS_EXPLOITABLE" = true ] ||  [ "$IS_MALWARE" = true ] ||  [ "$IS_LATEST" = true ] || [ "$IS_MISCONFIG" = true ]; then
         SCAN_RETURN_CODE=1
     else
-        echo "$IMAGE_LINK >>> OK                              "
+        echo -e "$EMOJI_OK $C_GRN$IMAGE_LINK$C_NIL >>> OK                              "
     fi    
 }
 
