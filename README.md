@@ -4,7 +4,7 @@
 
 PISC (Public OCI-Image or docker-image Security Checker) is a set of bash scripts that check the following:
 * **malware** 🦠 (exploits 🐙, hack-tools 👾, backdoors 🐴, crypto-miners 💰, etc 💩) by [virustotal](https://www.virustotal.com/)
-* exploitable critical **vulnerabilities** 🐞 by [trivy](https://github.com/aquasecurity/trivy) and [inthewild.io](https://inthewild.io/)
+* exploitable critical **vulnerabilities** 🐞 by [trivy](https://github.com/aquasecurity/trivy) and [inthewild.io](https://inthewild.io/) (vulners.com optional)
 * image **misconfigurations** 🐳 like [CVE-2024-21626](https://www.docker.com/blog/docker-security-advisory-multiple-vulnerabilities-in-runc-buildkit-and-moby/)
 * old **creation date** 📆
 * [non-version](https://docs.docker.com/engine/security/trust/#image-tags-and-dct) **tag** 🔄 (latest, etc)
@@ -15,8 +15,8 @@ It can be used to automatically check the security of public OCI-images before r
 </p>
 
 ## Releases here:
-https://hub.docker.com/r/kapistka/pisc/tags
-[changelog](./changelog.txt)
+* https://hub.docker.com/r/kapistka/pisc/tags
+* [changelog](./changelog.txt)
 
 ## Usage
 
