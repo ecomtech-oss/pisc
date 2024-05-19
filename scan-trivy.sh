@@ -38,6 +38,11 @@ EMOJI_EXPLOIT='\U1F41E' # lady beetle
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# check debug mode to debug child scripts
+DEBUG=''
+if [[ "$-" == *x* ]]; then
+    DEBUG='-x '
+fi
 
 #cve list for exploit analysis
 CVE_FILE=$SCRIPTPATH'/scan-trivy.cve'
@@ -91,7 +96,7 @@ while true ; do
 done
 
 # download and unpack image or use cache 
-/bin/bash $SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
+/bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
 
 echo -ne "  $IMAGE_LINK >>> scan vulnerabilities by trivy\033[0K\r"
 # if trivy-token is not specified, then use the local database (slow, if the script is in a OCI-image, the CI/CD speed suffers)
@@ -156,11 +161,11 @@ done
 LIST_EXPL=()
 # exploit analysis by vulners.com
 if [ ! -z "$VULNERS_API_KEY" ]; then
-    /bin/bash $SCRIPTPATH/scan-vulners-com.sh --dont-output-result -i $IMAGE_LINK --vulners-key $VULNERS_API_KEY
+    /bin/bash $DEBUG$SCRIPTPATH/scan-vulners-com.sh --dont-output-result -i $IMAGE_LINK --vulners-key $VULNERS_API_KEY
     LIST_EXPL+=($(<$SCRIPTPATH/scan-vulners-com.result))
 # exploit analysis by inthewild.io    
 else
-    /bin/bash $SCRIPTPATH/scan-inthewild-io.sh --dont-output-result -i $IMAGE_LINK
+    /bin/bash $DEBUG$SCRIPTPATH/scan-inthewild-io.sh --dont-output-result -i $IMAGE_LINK
     LIST_EXPL+=($(<$SCRIPTPATH/scan-inthewild-io.result))
 fi
 

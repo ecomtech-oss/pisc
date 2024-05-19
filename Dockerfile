@@ -9,7 +9,8 @@ RUN addgroup -g 65532 -S nonroot \
   && adduser -u 65532 -S nonroot -G nonroot -s /bin/sh
 
 WORKDIR /home/nonroot
-COPY scan.sh \
+COPY mime-helper.sh \
+     scan.sh \
      scan-date.sh \
      scan-download-unpack.sh \
      scan-inthewild-io.sh \

@@ -24,7 +24,6 @@ MISCONFIG_REGEX=(
     "\--mount"
     "#*syntax=*docker*"
     "/etc/*-release"
-    "/etc/apk|/lib/apk|/var/cache/apt/archives|/var/lib/apt/lists/|/var/cache/yum"
     "ln\S+\.json|\S+\.lock|ln\S+\.txt"
     "\supx\s"
 )
@@ -34,7 +33,6 @@ MISCONFIG_MESSAGE=(
     "CVE-2024-23652 BuildKit mount stub cleaner"
     "CVE-2024-23653 Buildkit's API does not validate entitlements check"
     "malicious-compliance - attempt to avoid OS detection"
-    "malicious-compliance - remove package cache"
     "malicious-compliance - hide language dependency files"
     "malicious-compliance - UPX detected"
 )
@@ -44,7 +42,6 @@ MISCONFIG_URL=(
     "https://github.com/advisories/GHSA-4v98-7qmw-rqr8"
     "https://github.com/advisories/GHSA-wr6v-9f75-vh2g"
     "https://github.com/bgeesaman/malicious-compliance/blob/main/docker/Dockerfile-1-os"
-    "https://github.com/bgeesaman/malicious-compliance/blob/main/docker/Dockerfile-2-pkg"
     "https://github.com/bgeesaman/malicious-compliance/blob/main/docker/Dockerfile-3-lang"
     "https://github.com/bgeesaman/malicious-compliance/blob/main/docker/Dockerfile-4-bin"
 )
@@ -57,10 +54,16 @@ MISCONFIG_RESULT=false
 
 C_RED='\033[0;31m'
 C_NIL='\033[0m'
+
 EMOJI_DOCKER='\U1F433' # whale
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# check debug mode to debug child scripts
+DEBUG=''
+if [[ "$-" == *x* ]]; then
+    DEBUG='-x '
+fi
 
 RES_FILE=$SCRIPTPATH'/scan-misconfig.result'
 rm -f $RES_FILE
@@ -89,7 +92,7 @@ while true ; do
 done
 
 # download and unpack image or use cache 
-/bin/bash $SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
+/bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
 
 echo -ne "  $IMAGE_LINK >>> scan misconfiguration\033[0K\r"
 
@@ -99,7 +102,7 @@ do
     do
         if grep -Eqi ${MISCONFIG_REGEX[$i]} $f; then
             MISCONFIG_RESULT=true
-            MISCONFIG_RESULT_MESSAGE=$MISCONFIG_RESULT_MESSAGE$'\n  \e]8;;'${MISCONFIG_URL[$i]}'\a'${MISCONFIG_MESSAGE[$i]}'\e]8;;\a'
+            MISCONFIG_RESULT_MESSAGE=$MISCONFIG_RESULT_MESSAGE$'\n  '${MISCONFIG_MESSAGE[$i]}$'\n    '${MISCONFIG_URL[$i]}
         fi
     done
 done

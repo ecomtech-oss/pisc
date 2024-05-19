@@ -12,7 +12,7 @@ error_exit()
 }
 
 version() {
-    echo v0.0.13
+    echo v0.0.14
 }
 
 usage() {
@@ -31,9 +31,9 @@ Author: @kapistka, 2024
           |||||\______/
 
 Gives a result = 1 if any:
- - contains malware
- - has exploitable vulnerabilities
- - has a dangerous misconfigurations
+ - image contains malware
+ - image has exploitable vulnerabilities
+ - image has a dangerous build misconfiguration
  - image older then N days
  - use non-version tag (:latest)
 
@@ -80,8 +80,10 @@ C_BLU='\033[1;34m'
 C_GRN='\033[1;32m'
 C_NIL='\033[0m'
 C_RED='\033[0;31m'
-EMOJI_ON='\U2705' # white heavy check mark
-EMOJI_OFF='\U274C' # cross mark 
+#EMOJI_ON='\U2705' # white heavy check mark
+#EMOJI_OFF='\U274C' # cross mark 
+EMOJI_ON='\U2795' # plus
+EMOJI_OFF='\U2796' # minus
 EMOJI_OK='\U1F44D' # thumbs up
 EMOJI_LATEST='\U1F504' # anticlockwise downwards and upwards open circle arrows
 EMOJI_OLD='\U1F4C6' # tear-off calendar
@@ -91,6 +93,11 @@ U_LINE=$U_LINE2$U_LINE2$U_LINE2$U_LINE2$U_LINE2
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# check debug mode to debug child scripts
+DEBUG=''
+if [[ "$-" == *x* ]]; then
+    DEBUG='-x '
+fi
 
 # read the options
 ARGS=$(getopt -o dehf:i:lmv --long date,exploits,d-days:,help,file:,image:,latest,misconfig,trivy-server:,trivy-token:,version,virustotal-key:,vulners-key: -n $0 -- "$@")
@@ -274,7 +281,7 @@ scan_image() {
 
     # old build date checking
     if [ "$CHECK_DATE" = true ]; then
-        /bin/bash $SCRIPTPATH/scan-date.sh --dont-output-result -i $IMAGE_LINK
+        /bin/bash $DEBUG$SCRIPTPATH/scan-date.sh --dont-output-result -i $IMAGE_LINK
         CREATED_DATE=$(<$SCRIPTPATH/scan-date.result)
         CREATED_DATE_LAST=$CREATED_DATE
         # was built more than N days ago
@@ -288,7 +295,7 @@ scan_image() {
 
     # misconfigurations scanning
     if [ "$CHECK_MISCONFIG" = true ]; then
-        /bin/bash $SCRIPTPATH/scan-misconfig.sh --dont-output-result -i $IMAGE_LINK
+        /bin/bash $DEBUG$SCRIPTPATH/scan-misconfig.sh --dont-output-result -i $IMAGE_LINK
         MISCONFIG_RESULT_MESSAGE=$(<$SCRIPTPATH/scan-misconfig.result)
         if [ "$MISCONFIG_RESULT_MESSAGE" != "OK" ]; then
             IS_MISCONFIG=true
@@ -297,7 +304,7 @@ scan_image() {
     
     # virustotal scanning
     if [ ! -z "$VIRUSTOTAL_API_KEY" ]; then
-        /bin/bash $SCRIPTPATH/scan-virustotal.sh --dont-output-result --virustotal-key $VIRUSTOTAL_API_KEY -i $IMAGE_LINK
+        /bin/bash $DEBUG$SCRIPTPATH/scan-virustotal.sh --dont-output-result --virustotal-key $VIRUSTOTAL_API_KEY -i $IMAGE_LINK
         VIRUSTOTAL_RESULT_MESSAGE=$(<$SCRIPTPATH/scan-virustotal.result)
         if [ "$VIRUSTOTAL_RESULT_MESSAGE" != "OK" ]; then
             IS_MALWARE=true
@@ -313,7 +320,7 @@ scan_image() {
         if [ ! -z "$TRIVY_SERVER" ]; then
             PARAMS=$PARAMS" --trivy-server $TRIVY_SERVER --trivy-token $TRIVY_TOKEN"
         fi
-        /bin/bash $SCRIPTPATH/scan-trivy.sh --dont-output-result -i $IMAGE_LINK $PARAMS
+        /bin/bash $DEBUG$SCRIPTPATH/scan-trivy.sh --dont-output-result -i $IMAGE_LINK $PARAMS
         TRIVY_RESULT_MESSAGE=$(<$SCRIPTPATH/scan-trivy.result)
         if [ "$TRIVY_RESULT_MESSAGE" != "OK" ]; then
             IS_EXPLOITABLE=true
@@ -322,7 +329,7 @@ scan_image() {
 
     # candidates for a new image if it is outdated or there are exploits
     if [ "$IS_OLD" = true ] ||  [ "$IS_EXPLOITABLE" = true ]; then
-        /bin/bash $SCRIPTPATH/scan-new-tags.sh --dont-output-result -i $IMAGE_LINK
+        /bin/bash $DEBUG$SCRIPTPATH/scan-new-tags.sh --dont-output-result -i $IMAGE_LINK
         CREATED_DATE_LAST=`awk 'NR==1 {print; exit}' $SCRIPTPATH/scan-new-tags.result`
         NEW_TAGS_RESULT_MESSAGE=`awk 'NR>1 {print}' $SCRIPTPATH/scan-new-tags.result`
     fi 

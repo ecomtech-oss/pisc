@@ -37,6 +37,11 @@ IMAGE_LINK=''
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# check debug mode to debug child scripts
+DEBUG=''
+if [[ "$-" == *x* ]]; then
+    DEBUG='-x '
+fi
 
 JSON_FILE=$SCRIPTPATH'/inspect.json'
 RES_FILE=$SCRIPTPATH'/scan-date.result'
@@ -86,7 +91,7 @@ fi
 echo -ne "  $IMAGE_LINK >>> extended check date\033[0K\r"
 
 # download and unpack image or use cache 
-/bin/bash $SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
+/bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
 
 # var init for advanced date search
 CREATED_DATE_EXT=0

@@ -22,6 +22,19 @@ error_exit()
     exit 1
 }
 
+#popular linux MIME-types exclude from malware analysis
+EXCLUDE_MIMES=(
+    "application/x-gettext-translation"
+    "application/x-terminfo"
+    "application/x-terminfo2"
+    "application/x-tex-tfm"
+    "text/x-asm"
+    "text/x-c"
+    "text/x-c++"
+    "text/x-java"
+    "text/x-makefile"
+    "text/x-tex"
+)
 # var init (can be changed)
 # list of false positive vendors
 FALSE_POSITIVE_VENDOR=(
@@ -30,7 +43,7 @@ FALSE_POSITIVE_VENDOR=(
 # waiting between requests
 REQUEST_LIMIT=false
 # wait while virustotal analyzes the image (seconds)
-MAX_ANALYSIS_TIME=600
+MAX_ANALYSIS_TIME=900
 # if a limited account is used, then after 4 requests, wait as many seconds
 SLEEP_TIME_AFTER_LIMIT=60
 
@@ -38,6 +51,7 @@ SLEEP_TIME_AFTER_LIMIT=60
 DONT_ADV_SEARCH=false
 DONT_OUTPUT_RESULT=false
 IMAGE_LINK=''
+IS_BIG_LAYER_REDUCE=false
 IS_OK=true
 API_KEY=''
 REQUEST_COUNT=0
@@ -47,26 +61,30 @@ C_BLU='\033[1;34m'
 C_NIL='\033[0m'
 
 EMOJI_SLEEP='\U1F4A4' # zzz
-EMOJI_MALWARE='\U26A1' # high voltage
+EMOJI_MALWARE='\U1F9A0' # microbe
 EMOJI_DEFAULT='\U1F4A9' # shit
 EMOJI_OK='\U1F44D' # thumbs up
 EMOJI_NAMES=(
     'vulnerabil'
     'xploit'
     'sploit'
+    'meter'
     'crypto'
     'miner'
     'hack'
+    'tool'
     'backdoor'
     'trojan'
     'worm'
 )
 EMOJI_CODES=(
-    '\U1F41E' # lady beetle
+    '\U1F41E' # bug
+    '\U1F419' # octopus
     '\U1F419' # octopus
     '\U1F419' # octopus
     '\U1F511' # key
     '\U1F4B0' # money
+    '\U1F47E' # alien
     '\U1F47E' # alien
     '\U1F434' # horse
     '\U1F434' # horse
@@ -75,6 +93,11 @@ EMOJI_CODES=(
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# check debug mode to debug child scripts
+DEBUG=''
+if [[ "$-" == *x* ]]; then
+    DEBUG='-x '
+fi
 
 IMAGE_DIR=$SCRIPTPATH'/image'
 ADVANCED_DIR=$SCRIPTPATH'/advanced'
@@ -223,7 +246,7 @@ analysis_search() {
 # use after advanced upload files to virustotal
 # relationship_search SHA256
 relationship_search() {
-    SEARCH_RESULT=''
+    SEARCH_RELATIONS_RESULT=()
     # 1 minute delay after 4 requests is the limit of the free virustotal account
     quota_sleep
     # increasing the request counter (this method is limited by the number per minute/day/month)
@@ -261,6 +284,11 @@ relationship_search() {
             if [ "${REL_PATH[$ii]}" == 'null' ]; then
                 REL_PATH[$ii]=`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.meaningful_name?' $JSON_RELATIONSHIP_FILE`
             fi
+            # if path very long then cut it
+            if [ ${#REL_PATH[$ii]} -gt 70 ] ; then 
+                c=${#REL_PATH[$ii]}-70
+                REL_PATH[$ii]=".."${REL_PATH[$ii]:$c} 
+            fi
 
             REL_COUNT=0
             REL_COUNT=$(( $REL_COUNT + ${REL_MALICIOUS[$ii]} ))
@@ -285,7 +313,8 @@ relationship_search() {
 
             # check known_distributors - false positive
             REL_KNOWN_DISTRIBUTORS=`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.known_distributors?.distributors?[]?' $JSON_RELATIONSHIP_FILE`
-            if [ ! -z "$REL_KNOWN_DISTRIBUTORS" ]; then 
+            # malicious count must be less than 2
+            if [[ ! -z "$REL_KNOWN_DISTRIBUTORS" ]] && [[  "${REL_MALICIOUS[$ii]}" -lt 2 ]]; then 
                 REL_LABEL[$ii]='file-distributed-by-'$REL_KNOWN_DISTRIBUTORS
                 REL_LABEL[$ii]=$C_BLU${REL_LABEL[$ii]}$C_NIL
                 # add OK-emoji to label
@@ -306,16 +335,9 @@ relationship_search() {
                     REL_LABEL[$ii]=$EMOJI_DEFAULT' '${REL_LABEL[$ii]}
                 fi
             fi
-
-            SEARCH_RESULT=$SEARCH_RESULT$'\n '${REL_PATH[$ii]}' '${REL_STAT[$ii]}' '${REL_LABEL[$ii]}
+            SEARCH_RELATIONS_RESULT+=("${REL_PATH[$ii]} ${REL_STAT[$ii]} ${REL_LABEL[$ii]}")
         fi    
     done
-    # draw beauty table
-    echo "$SEARCH_RESULT" > $TMP_FILE
-    sort $TMP_FILE > $SORT_FILE
-    xargs -0 -n3 < $SORT_FILE | column -t -s' ' > $TMP_FILE
-    sed 's/^/    /' $TMP_FILE > $SORT_FILE
-    SEARCH_RESULT=$(<$SORT_FILE)
 } 
 
 # upload to virustotal function
@@ -378,7 +400,6 @@ unpack() {
     # Therefore it is necessary to additionally install GNU-tar in the alpine-OCI-image
     # Also exclude dev/* because nonroot will cause a device creation error
     tar --ignore-failed-read --one-file-system --exclude dev/* -xf "$1" -C "$IMAGE_DIR/0" &>/dev/null
-    # check if there is at least one application or x-shellscript in current layer
     LIST_TAR_FILES=()
     # sometimes "permission denied" was here
     LIST_TAR_FILES=(`find $IMAGE_DIR/0 -type f`)
@@ -395,7 +416,7 @@ unpack() {
 }
 
 # check mime-types
-# find any file of application/* or */x-shellscript
+# find any file of malware mime-types
 # mime-types path_to_tar
 mime-types() {
     echo -ne "  $IMAGE_LINK >>> check mime-types\033[0K\r"
@@ -403,17 +424,31 @@ mime-types() {
     do
         MIME_TYPE=(`file --mime-type ${LIST_TAR_FILES[$ii]} | awk '{print $2}'`)
         if [[ $MIME_TYPE == application/x-* ]] || [[ $MIME_TYPE == text/x-* ]]; then
-            IS_ANALYSIS=true
-            # if this is first check (before upload) or
-            # used cache from previous download
-            # exit from for-loop on first file
-            if [ "$IS_OK" = true ] || [ -f $1.list ]; then
-                break
-            # for advanced malware searching write all potential malware file-pathes to .list.tmp (not cache)   
-            else
-                # cut first part of path ($IMAGE_DIR/0/)
-                # for normal tar-packing
-                echo "${LIST_TAR_FILES[$ii]#$IMAGE_DIR'/0/'}" >> "$1.list.tmp"
+            # popular excludes
+            EXCLUDE=false
+            for (( iii=0; iii<${#EXCLUDE_MIMES[@]}; iii++ )); do
+                if [[ ${EXCLUDE_MIMES[iii]} = $MIME_TYPE ]]; then
+                    EXCLUDE=true
+                    break
+                fi
+            done
+
+            if  [ "$EXCLUDE" = false ]  ; then
+                IS_ANALYSIS=true
+                # if cache exists then break
+                if [ -f $1.list ] ; then
+                    break
+                # for advanced malware searching write all potential malware file-pathes to .list.tmp (not cache)   
+                elif  [ "$IS_OK" = false ]  ; then
+                    echo "${LIST_TAR_FILES[$ii]#$IMAGE_DIR'/0/'}" >> "$1.list.tmp"
+                # inside function reduce-size 
+                elif  [ "$IS_BIG_LAYER_REDUCE" = true ]  ; then
+                    echo "${LIST_TAR_FILES[$ii]#$IMAGE_DIR'/0/'}" >> "$1.list.tmp"
+                    echo `stat -c%s "${LIST_TAR_FILES[$ii]}"`" ${LIST_TAR_FILES[$ii]#$IMAGE_DIR'/0/'}" >> "$1.list.reduce.tmp"  
+                # if first scan for layer and it is not big then break    
+                else
+                    break
+                fi    
             fi    
         fi
     done
@@ -421,29 +456,106 @@ mime-types() {
     if [ -f $1.list.tmp ]; then
         mv $1.list.tmp $1.list &>/dev/null
     fi
+    # rename .list.reduce.tmp to .list.reduce (cache for reduce is ready)
+    if [ -f $1.list.reduce.tmp ]; then
+        mv $1.list.reduce.tmp $1.list.reduce &>/dev/null
+    fi
+}
+
+# check layer size
+# and reduce it if is too big
+# reduce-size path_to_tar
+reduce-size() {
+    # first check size
+    SIZE_LAYER=`stat -c%s "$1"`
+    if [[ $SIZE_LAYER -gt 629145600 ]]; then
+        # rename tar if it is big - for ignoring it next time
+        mv $1 $1.big &>/dev/null
+        # var for logic inside function mime-types
+        IS_BIG_LAYER_REDUCE=true
+        # function mime-types with exteded logic
+        mime-types $1
+        echo -ne "  $IMAGE_LINK >>> reduce layer size (`echo $SIZE_LAYER | numfmt --to=iec`)\033[0K\r"
+        # pack files to upload (compression doesn't make much sense)
+        tar -cvf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $1.list &>/dev/null
+        SHA256=`sha256sum $IMAGE_DIR/tmp.tar | awk '{ print $1 }'` &>/dev/null
+        mv $IMAGE_DIR/tmp.tar $IMAGE_DIR/$SHA256.tar &>/dev/null
+        # check size again
+        SIZE_LAYER=`stat -c%s "$IMAGE_DIR/$SHA256.tar"`
+        if [[ $SIZE_LAYER -gt 629145600 ]]; then
+            # rename tar if it is big - for ignoring it next time
+            mv $IMAGE_DIR/$SHA256.tar $IMAGE_DIR/$SHA256.tar.old &>/dev/null
+            # sort files by size
+            sort -gr $1.list.reduce > $1.list.reduce.sort
+            # summry size we should remove
+            let SIZE_REMOVE=$SIZE_LAYER-629145600
+            # get list of sizes from sort file
+            LIST_SORT_SIZES=(`awk '{print $1}' $1.list.reduce.sort`)
+            # init counters
+            SIZE_COUNTER=0
+            REMOVE_COUNT=0
+            # summ file sizes from sorted list and compare with SIZE_REMOVE
+            for (( ii=0; ii<${#LIST_SORT_SIZES[@]}; ii++ ));
+            do 
+                # summ file sizes
+                let SIZE_COUNTER=$SIZE_COUNTER+${LIST_SORT_SIZES[$ii]}
+                # if summ file sizes more when size to remove
+                if [[ $SIZE_COUNTER -gt $SIZE_REMOVE ]]; then 
+                    let REMOVE_COUNT=$ii 
+                    break 
+                fi
+            done
+            # get list of files from sort file
+            LIST_SORT_FILES=(`awk '{print $2}' $1.list.reduce.sort`)
+            # recreate list of files to tar (sum size less when 650 MB)
+            for (( ii=0; ii<${#LIST_SORT_FILES[@]}; ii++ ));
+            do 
+                # write to file for tar
+                if [[ $ii -gt $REMOVE_COUNT ]]; then   
+                    echo "${LIST_SORT_FILES[$ii]}" >> "$1.list.reduce-tar.tmp"    
+                fi
+            done  
+            if [ -f $1.list.reduce-tar.tmp ]; then
+                mv $1.list.reduce-tar.tmp $1.list.reduce-tar &>/dev/null
+            fi  
+            # pack files to upload (compression important for tar-metadata)
+            tar -czvf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $1.list.reduce-tar &>/dev/null
+            SHA256=`sha256sum $IMAGE_DIR/tmp.tar | awk '{ print $1 }'` &>/dev/null
+            mv $IMAGE_DIR/tmp.tar $IMAGE_DIR/$SHA256.tar &>/dev/null
+            # set f as new reduced layer
+            f=$IMAGE_DIR/$SHA256.tar
+        fi
+    fi
 }
 
 # download and unpack image or use cache 
-/bin/bash $SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
+/bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
 
 # unpack layers and check mime-types
-# if we find any file of application/* or */x-shellscript
+# if we find any file of malware mime-types
 # the layer mark as download to virustotal
 
 # list of layer hashes to be searched or uploaded
 LIST_LAYERS_TO_ANALYSIS=()
+# list of reduced layers (true/false)
+LIST_LAYERS_REDUCE=()
 # go through layers-archives
 for f in "$IMAGE_DIR"/*.tar
 do
     IS_ANALYSIS=false
+    IS_BIG_LAYER_REDUCE=false
     unpack $f
     mime-types $f
     if [ "$IS_ANALYSIS" = true ]; then
-        # if application or x-shellscript is found the layer is to be scanned
+        # reduce layer size if it more when 650 MB
+        reduce-size $f
+        # if malware mime-type is found the layer is to be scanned
         filename="${f##*/}"
         filename="${filename%.*}"
         LIST_LAYERS_TO_ANALYSIS+=($filename)
     fi
+    # reduce layers to list, so dont do advanced malware search for reduced
+    LIST_LAYERS_REDUCE+=($IS_BIG_LAYER_REDUCE)
 done
 
 # looking for layer hashes in virustotal
@@ -508,10 +620,6 @@ do
     if [ "${LIST_RESULT[$i]}" == "bad" ]; then
         IS_OK=false
     fi    
-    #We can "tighten the nuts" and do not skip large layers or if there are problems with virustotal
-    #if [ "${LIST_RESULT[$i]}" == "unknown" ] || [ "${LIST_RESULT[$i]}" == "big" ]; then
-    #   IS_OK=false
-    #fi
 done
 
 # advanced malware search inside layer.
@@ -520,6 +628,7 @@ done
 # This will allow to get more related malware files
 
 LIST_RESULT_ADV=()
+# count(LIST_LAYERS_TO_ANALYSIS_ADV) = count(LIST_LAYERS_TO_ANALYSIS)
 LIST_LAYERS_TO_ANALYSIS_ADV=()
 LIST_UPLOAD_ID_ADV=()
 if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
@@ -528,15 +637,21 @@ if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
         LIST_RESULT_ADV[$i]='unknown'
         LIST_UPLOAD_ID_ADV[$i]=''
         LIST_LAYERS_TO_ANALYSIS_ADV[$i]=''
-        if [ "${LIST_RESULT[$i]}" == "bad" ]; then
+        if [ "${LIST_RESULT[$i]}" == "bad" ] && [ "${LIST_LAYERS_REDUCE[$i]}" == false ]; then
             # unpack again and check all mime-types in layer
             unpack $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar
             mime-types $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar
             
             echo -ne "  $IMAGE_LINK >>> advanced malware analysis (pack)\033[0K\r"
 
-            # pack files to upload (compression doesn't make much sense)
-            tar -cvf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar.list &>/dev/null
+            # check if original layer was compressed
+            if (file ${LIST_LAYERS_TO_ANALYSIS[$i]}.tar | grep -q compressed ) ; then
+                # pack files to upload  (with compression)
+                tar -czvf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar.list &>/dev/null
+            else
+                # pack files to upload  (without compression)
+                tar -cvf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar.list &>/dev/null
+            fi    
             SHA256=`sha256sum $IMAGE_DIR/tmp.tar | awk '{ print $1 }'` &>/dev/null
             mv $IMAGE_DIR/tmp.tar $IMAGE_DIR/$SHA256.tar &>/dev/null
             
@@ -588,16 +703,62 @@ if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
     fi    
     
     echo -ne "  $IMAGE_LINK >>> virustotal relationship search\033[0K\r"
+    LIST_RESULT_PRINT=()
     for (( i=0; i<${#LIST_LAYERS_TO_ANALYSIS[@]}; i++ ));
     do
-        if [ "${LIST_RESULT_ADV[$i]}" == "bad" ]; then
-            relationship_search ${LIST_LAYERS_TO_ANALYSIS_ADV[$i]}
-            LIST_RESULT_ADV[$i]=$SEARCH_RESULT
-            LIST_RESULT_ADV[$i]='  layer:'${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}' - see \e]8;;https://www.virustotal.com/gui/file/'${LIST_LAYERS_TO_ANALYSIS_ADV[$i]}'/relations\avirustotal analysis\e]8;;\a'$'\n'$SEARCH_RESULT
-        # if adv search not detect malware, show previous scan
-        else
-            LIST_RESULT_ADV[$i]='  https://www.virustotal.com/gui/file/'${LIST_LAYERS_TO_ANALYSIS[$i]}
-        fi    
+        LIST_RESULT_PRINT[$i]=''
+        if [ "${LIST_RESULT[$i]}" == "bad" ]; then 
+            relationship_search ${LIST_LAYERS_TO_ANALYSIS[$i]}
+            # copy result to another array
+            SEARCH_RESULT_FIRST=("${SEARCH_RELATIONS_RESULT[@]}") 
+            LIST_RESULT_PRINT[$i]='    https://www.virustotal.com/gui/file/'${LIST_LAYERS_TO_ANALYSIS[$i]}
+
+            if [ "${LIST_RESULT_ADV[$i]}" == "bad" ]; then
+                relationship_search ${LIST_LAYERS_TO_ANALYSIS_ADV[$i]}
+                # copy result to another array
+                SEARCH_RESULT_SECOND=("${SEARCH_RELATIONS_RESULT[@]}") 
+                LIST_RESULT_PRINT[$i]=${LIST_RESULT_PRINT[$i]}$'\n    https://www.virustotal.com/gui/file/'${LIST_LAYERS_TO_ANALYSIS_ADV[$i]}
+            fi  
+
+            SEARCH_RELATIONS_RESULT=("${SEARCH_RESULT_FIRST[@]}")
+            # no duplicates from second array
+            for (( j=0; j<${#SEARCH_RESULT_SECOND[@]}; j++ )); do
+                IS_ADD=true
+                IS_EDIT=false
+                for (( k=0; k<${#SEARCH_RELATIONS_RESULT[@]}; k++ )); do
+                    # replace item by full path
+                    if [[ "${SEARCH_RESULT_SECOND[$j]}" == *"${SEARCH_RELATIONS_RESULT[$k]}"* ]]; then
+                        SEARCH_RELATIONS_RESULT[$k]="${SEARCH_RESULT_SECOND[$j]}"
+                        IS_ADD=false
+                        break
+                    fi
+                    # dont add the same or more short item
+                    if [[ "${SEARCH_RELATIONS_RESULT[$k]}" == *"${SEARCH_RESULT_SECOND[$j]}"* ]]; then
+                        IS_ADD=false
+                        break
+                    fi
+                done
+                if [ "$IS_ADD" = true ] ; then
+                    SEARCH_RELATIONS_RESULT+=("${SEARCH_RESULT_SECOND[$j]}")
+                fi
+            done
+            SEARCH_RESULT=''
+            for (( j=0; j<${#SEARCH_RELATIONS_RESULT[@]}; j++ )); do
+                SEARCH_RESULT=$SEARCH_RESULT$'\n'${SEARCH_RELATIONS_RESULT[$j]}
+            done
+
+            # if vt return relations
+            if [ ${#SEARCH_RELATIONS_RESULT[@]} -gt 0 ] ; then 
+                # draw beauty table
+                echo "$SEARCH_RESULT" > $TMP_FILE
+                sort $TMP_FILE > $SORT_FILE
+                xargs -0 -n3 < $SORT_FILE | column -t -s' ' > $TMP_FILE
+                sed 's/^/      /' $TMP_FILE > $SORT_FILE
+                SEARCH_RESULT=$(<$SORT_FILE)  
+                # for print
+                LIST_RESULT_PRINT[$i]=${LIST_RESULT_PRINT[$i]}$'\n'$SEARCH_RESULT
+            fi    
+        fi
     done
 fi
 
@@ -607,17 +768,13 @@ if [ "$IS_OK" = false ]; then
     RESULT_MESSAGE="$EMOJI_MALWARE $C_RED$IMAGE_LINK$C_NIL >>> virustotal detected malicious file" 
     for (( i=0; i<${#LIST_LAYERS_TO_ANALYSIS[@]}; i++ ));
     do
-        if [ "$DONT_ADV_SEARCH" = false ]; then
-            if [ "${LIST_RESULT[$i]}" == "bad" ]; then
-                RESULT_MESSAGE=$RESULT_MESSAGE$'\n'${LIST_RESULT_ADV[$i]}
-            fi    
-        else
-            if [ "${LIST_RESULT[$i]}" == "bad" ]; then
-                RESULT_MESSAGE=$RESULT_MESSAGE$'\n  https://www.virustotal.com/gui/file/'${LIST_LAYERS_TO_ANALYSIS[$i]}'/relations'
+        if [ "${LIST_RESULT[$i]}" == "bad" ]; then 
+            if [ "${LIST_LAYERS_REDUCE[$i]}" == false ]; then
+                RESULT_MESSAGE=$RESULT_MESSAGE$'\n''  layer:'${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}
+            else
+                RESULT_MESSAGE=$RESULT_MESSAGE$'\n''  layer:'${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}' (reduce)'
             fi
-        fi    
-        if [ "${LIST_RESULT[$i]}" == "big" ]; then
-            RESULT_MESSAGE=$RESULT_MESSAGE$'\n  layer '${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}' is too big, no virustotal scan'
+            RESULT_MESSAGE=$RESULT_MESSAGE$'\n'${LIST_RESULT_PRINT[$i]}
         fi
         if [ "${LIST_RESULT[$i]}" == "unknown" ]; then
             RESULT_MESSAGE=$RESULT_MESSAGE$'\n  layer '${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}' is unknown for virustotal'

@@ -1,0 +1,39 @@
+v0.0.5
+Add virustotal scan
+Check date by image file-system (if inspect image no date return)
+Add script flags
+Add separate scans
+
+v0.0.7
+Bug fix - big files
+Bug fix - empty trivy report
+
+v0.0.8
+Attention! Change script flags! (see --help)
+Total refactoring - 9 scripts instead 1
+Bug fix - some dirs permission denied
+Add misconfig scan - leaky-vessels
+Change default exploit checker: vulners.com -> inthewild.io
+
+v0.0.11
+Bug fix - absolute paths in all scripts
+
+v0.0.12
+Bug fix - params set for trivy-server
+Bug fix - change trivy version 0.50 to 0.49.1 (https://github.com/aquasecurity/trivy/issues/6344)
+
+v0.0.13
+Check all needed tools exist + tar GNU-version
+Add misconfig scan - https://github.com/bgeesaman/malicious-compliance
+Improve virustotal time to analysis
+Add virustotal advanced malware search
+Add excludes for av-vendors (hardcode only)
+Show +/- options at start
+Add emoji and text colors =)
+
+v0.0.14
+Add reducing big layers
+Add excludes for popular linux MIME-types in malware analysis
+Add mime-helper.sh
+Improve virustotal searching. Upload original and advanced layers and join results
+Add debug-option (-x) in all child scripts
