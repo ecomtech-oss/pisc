@@ -12,7 +12,7 @@ error_exit()
 }
 
 version() {
-    echo v0.0.14
+    echo v0.0.15
 }
 
 usage() {
@@ -254,8 +254,8 @@ echo -e "$EMOJI_OPT check used non-version tag (:latest)"
 
 # single image verification
 scan_image() {
-    CREATED_DATE='01.01.1970'
-    CREATED_DATE_LAST='01.01.1970'
+    CREATED_DATE='1970-01-01'
+    CREATED_DATE_LAST='1970-01-01'
     IS_EXPLOITABLE=false
     IS_HIGH_EPSS=false
     IS_LATEST=false
@@ -277,21 +277,7 @@ scan_image() {
                 IS_LATEST=true
             fi
         fi
-    fi  
-
-    # old build date checking
-    if [ "$CHECK_DATE" = true ]; then
-        /bin/bash $DEBUG$SCRIPTPATH/scan-date.sh --dont-output-result -i $IMAGE_LINK
-        CREATED_DATE=$(<$SCRIPTPATH/scan-date.result)
-        CREATED_DATE_LAST=$CREATED_DATE
-        # was built more than N days ago
-        if [ "$CREATED_DATE" != "0001-01-01" ] && [ "$CREATED_DATE" != "1970-01-01" ]; then
-            AGE_DAYS=$(( ($(date +%s) - $(date -d $CREATED_DATE +%s)) / 86400 ))
-            if awk "BEGIN {exit !($AGE_DAYS >= $OLD_BUILD_DAYS)}"; then
-                IS_OLD=true
-            fi
-        fi
-    fi  
+    fi   
 
     # misconfigurations scanning
     if [ "$CHECK_MISCONFIG" = true ]; then
@@ -324,8 +310,25 @@ scan_image() {
         TRIVY_RESULT_MESSAGE=$(<$SCRIPTPATH/scan-trivy.result)
         if [ "$TRIVY_RESULT_MESSAGE" != "OK" ]; then
             IS_EXPLOITABLE=true
+            # force check date if it exploitable
+            CHECK_DATE=true
         fi  
     fi
+
+    # old build date checking
+    # after exploits checking - force CHECK_DATE = true
+    if [ "$CHECK_DATE" = true ]; then
+        /bin/bash $DEBUG$SCRIPTPATH/scan-date.sh --dont-output-result -i $IMAGE_LINK
+        CREATED_DATE=$(<$SCRIPTPATH/scan-date.result)
+        CREATED_DATE_LAST=$CREATED_DATE
+        # was built more than N days ago
+        if [ "$CREATED_DATE" != "0001-01-01" ] && [ "$CREATED_DATE" != "1970-01-01" ]; then
+            AGE_DAYS=$(( ($(date +%s) - $(date -d $CREATED_DATE +%s)) / 86400 ))
+            if awk "BEGIN {exit !($AGE_DAYS >= $OLD_BUILD_DAYS)}"; then
+                IS_OLD=true
+            fi
+        fi
+    fi 
 
     # candidates for a new image if it is outdated or there are exploits
     if [ "$IS_OLD" = true ] ||  [ "$IS_EXPLOITABLE" = true ]; then

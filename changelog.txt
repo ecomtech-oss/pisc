@@ -37,3 +37,8 @@ Add excludes for popular linux MIME-types in malware analysis
 Add mime-helper.sh
 Improve virustotal searching. Upload original and advanced layers and join results
 Add debug-option (-x) in all child scripts
+
+v0.0.15
+Add HIGH severity (now not only CRITICAL) to trivy-scaning and check exploits
+Bug fix - scan-new-tags.sh, empty sort-file
+Bug fix - scan.sh, force check date if image is vulnerable

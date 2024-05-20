@@ -64,16 +64,17 @@ Flags:
       root/liblzma.so.5.6.0.patch  32/66  🐴  trojan.xzbackdoor/cve20243094
 
 # log4shell-vulnerability + exploit
-./scan.sh -de --virustotal-key <virustotal-api-key> -i kapistka/log4shell:0.0.3-nonroot
+./scan.sh -delm --virustotal-key <virustotal-api-key> -i kapistka/log4shell:0.0.3-nonroot
 ════════════════════════════════════════
 🦠 kapistka/log4shell:0.0.3-nonroot >>> virustotal detected malicious file
   layer:7c9ba75b
     https://www.virustotal.com/gui/file/7c9ba75bf4cd4302633e29eea466489cfc98273377d834bc7603f10572ca1e97
 🐞 kapistka/log4shell:0.0.3-nonroot >>> detected exploitable vulnerabilities
-  CVE             FIX      PKG
-  CVE-2016-8735   2.12.2   org.apache.tomcat:tomcat-catalina
-  CVE-2021-44228  2.15.0,  org.apache.logging.log4j:log4j-core
-  CVE-2021-45046  2.3.1,   org.apache.logging.log4j:log4j-core
+  CVE             FIX               PKG
+  CVE-2016-8735   2.16.0,           org.apache.tomcat:tomcat-catalina
+  CVE-2018-1123   2:3.3.9-9+deb8u1  libprocps3
+  CVE-2021-44228  2.15.0,           org.apache.logging.log4j:log4j-core
+  CVE-2021-45046  2.3.1,            org.apache.logging.log4j:log4j-core
 📆 kapistka/log4shell:0.0.3-nonroot >>> created: 2023-04-18. Find another image
 
 # dangerous image build misconfiguration cve-2024-21626
@@ -111,9 +112,13 @@ Flags:
   3.18.2       3.18.3   3.18.4   3.18.5   3.18.6
   3.19         3.19.0   3.19.1  
 
-# check date by image file-system (inspect distroless-image no date return)
-./scan.sh -d -i gcr.io/distroless/base@sha256:a7b658ab73a602056c08e38257e3da2cb131855803b29af4a30ccd09c1283ce9
+# check date by image file-system (inspect distroless-image no date return) and exploitable vulnerability
+./scan.sh -de -i gcr.io/distroless/base@sha256:a7b658ab73a602056c08e38257e3da2cb131855803b29af4a30ccd09c1283ce9
 ════════════════════════════════════════
+🐞 gcr.io/distroless/base@sha256:a7b658ab73a602056c08e38257e3da2cb131855803b29af4a30ccd09c1283ce9 >>> detected exploitable vulnerabilities
+  CVE            FIX              PKG
+  CVE-2023-4911  2.31-13+deb11u7  libc6
 📆 gcr.io/distroless/base@sha256:a7b658ab73a602056c08e38257e3da2cb131855803b29af4a30ccd09c1283ce9 >>> created: 2023-02-22. Find another image
+adb84c747d07:~$
 ```
 

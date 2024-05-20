@@ -103,23 +103,25 @@ if [ -f $TMP_FILE ]; then
 fi 
 
 LIST_VER=()
-LIST_VER=(`awk '{print $1}' $SORT_FILE`)
-# leave versions more than in the image tag
-IMAGE_TAG=${IMAGE_LINK#*:}
-IMAGE_NAME=${IMAGE_LINK%%:*}
-LIST_VER_NEW=()
-IS_NEWER=false
-STRING_VER_NEW=""
-for (( i=0; i<${#LIST_VER[@]}; i++ ));
-do
-    if [ "$IS_NEWER" = true ]; then
-        LIST_VER_NEW+=(${LIST_VER[$i]})
-        STRING_VER_NEW="$STRING_VER_NEW ${LIST_VER[$i]}"
-    fi	    
-    if [ "${LIST_VER[$i]}" == "$IMAGE_TAG" ]; then
-        IS_NEWER=true
-    fi	  
-done
+if [ -f $SORT_FILE ]; then
+    LIST_VER=(`awk '{print $1}' $SORT_FILE`)
+    # leave versions more than in the image tag
+    IMAGE_TAG=${IMAGE_LINK#*:}
+    IMAGE_NAME=${IMAGE_LINK%%:*}
+    LIST_VER_NEW=()
+    IS_NEWER=false
+    STRING_VER_NEW=""
+    for (( i=0; i<${#LIST_VER[@]}; i++ ));
+    do
+        if [ "$IS_NEWER" = true ]; then
+            LIST_VER_NEW+=(${LIST_VER[$i]})
+            STRING_VER_NEW="$STRING_VER_NEW ${LIST_VER[$i]}"
+        fi	    
+        if [ "${LIST_VER[$i]}" == "$IMAGE_TAG" ]; then
+            IS_NEWER=true
+        fi	  
+    done
+fi    
 
 # go back through the list and check the build date
 CREATED_DATE_LAST='1970-01-01'

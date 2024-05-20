@@ -101,11 +101,11 @@ done
 echo -ne "  $IMAGE_LINK >>> scan vulnerabilities by trivy\033[0K\r"
 # if trivy-token is not specified, then use the local database (slow, if the script is in a OCI-image, the CI/CD speed suffers)
 if [ -z "$TRIVY_TOKEN" ]; then
-    trivy image -f json -o $JSON_FILE --severity CRITICAL --input $SCRIPTPATH/image.tar &>/dev/null \
+    trivy image -f json -o $JSON_FILE --severity CRITICAL,HIGH --input $SCRIPTPATH/image.tar &>/dev/null \
     || error_exit "$IMAGE_LINK >>> error trivy: please check connection to internet and retry"
 # if trivy-token is specified, then we use the trivy-server
 else
-    trivy image --server $TRIVY_SERVER --timeout 15m --token $TRIVY_TOKEN -f json -o $JSON_FILE --severity CRITICAL --input $SCRIPTPATH/image.tar &>/dev/null \
+    trivy image --server $TRIVY_SERVER --timeout 15m --token $TRIVY_TOKEN -f json -o $JSON_FILE --severity CRITICAL,HIGH --input $SCRIPTPATH/image.tar &>/dev/null \
     || error_exit "$IMAGE_LINK >>> error trivy server"
 fi
 
