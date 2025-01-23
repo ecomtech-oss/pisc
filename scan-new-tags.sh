@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2024
+# Author: @kapistka, 2025
 
 # Usage
 #     ./scan-new-tags.sh [--dont-output-result] -i image_link
@@ -31,6 +31,11 @@ EMOJI_INFO='\U1F4A1' # bulb
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# check debug mode to debug child scripts and external tools
+DEBUG_SKOPEO=''
+if [[ "$-" == *x* ]]; then
+    DEBUG_SKOPEO='--debug '
+fi
 
 # result of skopeo inspect of source image (don't remove)
 JSON_FILE=$SCRIPTPATH'/inspect.json'
@@ -43,6 +48,12 @@ SORT_FILE=$SCRIPTPATH'/scan-new-tags.sort'
 #temp version file before sorting
 TMP_FILE=$SCRIPTPATH'/scan-new-tags.tmp'
 rm -f $JSON_TEMP_FILE $RES_FILE $SORT_FILE $TMP_FILE
+
+SKOPEO_AUTH_FLAG=''
+AUTH_FILE=$SCRIPTPATH'/auth.json'
+if [ -f "$AUTH_FILE" ]; then
+    SKOPEO_AUTH_FLAG="--authfile=$AUTH_FILE"
+fi
 
 # read the options
 ARGS=$(getopt -o i: --long dont-output-result,image: -n $0 -- "$@")
@@ -68,15 +79,15 @@ done
 
 # download metadata or use cache
 if [ ! -f $JSON_FILE ]; then
-    echo -ne "  $IMAGE_LINK >>> inspect image\033[0K\r"
-    skopeo inspect "docker://$IMAGE_LINK" > $JSON_FILE
+    echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> inspect image\033[0K\r"
+    skopeo inspect "docker://$IMAGE_LINK" $SKOPEO_AUTH_FLAG $DEBUG_SKOPEO> $JSON_FILE
     # if a copy error exit with error
     if [ $? -ne 0 ]; then
         error_exit "$IMAGE_LINK >>> can't inspect, check image name and tag"
     fi 
 fi
 
-echo -ne "  $IMAGE_LINK >>> find newer tags\033[0K\r"
+echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> find newer tags\033[0K\r"
 
 LIST_TAG=(`jq '.RepoTags[]' $JSON_FILE | cut -c2- | rev | cut -c2- | rev`) \
     || error_exit "$IMAGE_LINK >>> error reading $JSON_FILE"
@@ -131,7 +142,7 @@ do
     if (( $i < 3 )); then 
         IMAGE_CHECK=$IMAGE_NAME":"${LIST_VER_NEW[${#LIST_VER_NEW[@]}-$i-1]}
         # we do not catch exceptions here because this is not an important functionality
-        skopeo inspect "docker://$IMAGE_CHECK" > $JSON_TEMP_FILE
+        skopeo inspect "docker://$IMAGE_CHECK" $SKOPEO_AUTH_FLAG $DEBUG_SKOPEO> $JSON_TEMP_FILE
         CREATED_DATE_NEW=(`jq '.Created' $JSON_TEMP_FILE | cut -b 2-11`)
         DIFF_DAYS=$(( ($(date -d $CREATED_DATE_NEW +%s) - $(date -d $CREATED_DATE_LAST +%s)) / 86400 ))
         if (( $DIFF_DAYS > 0 )); then
@@ -143,7 +154,7 @@ done
 # draw beauty table of versions
 echo $STRING_VER_NEW > $TMP_FILE
 xargs -n5 < $TMP_FILE | column -t -s' ' > $SORT_FILE
-sed 's/^/  /' $SORT_FILE > $TMP_FILE
+sed 's/^/   /' $SORT_FILE > $TMP_FILE
 STRING_VER_NEW=$(<$TMP_FILE)
 
 # result: output to console and write to file

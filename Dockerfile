@@ -1,7 +1,7 @@
-FROM aquasec/trivy:0.49.1 AS trivy
+FROM aquasec/trivy:0.58.2 AS trivy
 
 FROM alpine:3
-RUN apk update && apk upgrade && apk --no-cache add bash coreutils curl jq util-linux skopeo file tar
+RUN apk update && apk upgrade && apk --no-cache add bash coreutils curl jq yq util-linux skopeo file tar
 COPY --from=trivy /contrib /contrib
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 
@@ -9,7 +9,8 @@ RUN addgroup -g 65532 -S nonroot \
   && adduser -u 65532 -S nonroot -G nonroot -s /bin/sh
 
 WORKDIR /home/nonroot
-COPY mime-helper.sh \
+COPY check-exclusions.sh \
+     mime-helper.sh \
      scan.sh \
      scan-date.sh \
      scan-download-unpack.sh \

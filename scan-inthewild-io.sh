@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2024
+# Author: @kapistka, 2025
 
 # Usage
 #     ./scan-inthewild-io.sh [--cve cve_id] [--dont-output-result] [-i image_link]
@@ -8,6 +8,7 @@
 #     --cve string                      specify single cve or script trying to read scan-trivy.cve 
 #     --dont-output-result              don't output result into console, only into file
 #     -i, --image string                only this image will be checked. Example: -i kapistka/log4shell:0.0.3-nonroot
+#     --ignore-errors                   ignore inthewild errors (instead, write to $ERROR_FILE)
 # Example
 #     ./scan-inthewild-io.sh --cve CVE-2021-44228
 #     ./scan-inthewild-io.sh -i kapistka/log4shell:0.0.3-nonroot
@@ -15,29 +16,45 @@
 
 set -Eeo pipefail
 
-# exception handling
-error_exit()
-{
-    echo "$1"
-    exit 1
-}
-
 # var init
 CVE=''
 DONT_OUTPUT_RESULT=false
+IGNORE_ERRORS=false
 IMAGE_LINK=''
+IS_ERROR=false
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# check debug mode to debug child scripts and external tools
+DEBUG_CURL='-sf '
+if [[ "$-" == *x* ]]; then
+    DEBUG_CURL='-v '
+fi
 
 INPUT_FILE=$SCRIPTPATH'/scan-trivy.cve'
 JSON_FILE=$SCRIPTPATH'/scan-inthewild-io.json'
 RES_FILE=$SCRIPTPATH'/scan-inthewild-io.result'
-rm -f $RES_FILE
+ERROR_FILE=$SCRIPTPATH'/scan-inthewild-io.error'
+eval "rm -f $RES_FILE $ERROR_FILE"
 touch $RES_FILE
 
+# exception handling
+error_exit()
+{
+    if  [ "$IS_ERROR" = false ]; then
+        IS_ERROR=true
+        if [ "$IGNORE_ERRORS" = true ]; then
+            printf "   $1" > $ERROR_FILE
+            return 0
+        else
+            echo "  $IMAGE_LINK >>> $1                    "
+            exit 1
+        fi
+    fi
+}
+
 # read the options
-ARGS=$(getopt -o i: --long cve:,dont-output-result,image: -n $0 -- "$@")
+ARGS=$(getopt -o i: --long cve:,dont-output-result,ignore-errors,image: -n $0 -- "$@")
 eval set -- "$ARGS"
 
 # extract options and their arguments into variables.
@@ -52,6 +69,11 @@ while true ; do
             case "$2" in
                 "") shift 1 ;;
                 *) DONT_OUTPUT_RESULT=true ; shift 1 ;;
+            esac ;;
+        --ignore-errors)
+            case "$2" in
+                "") shift 1 ;;
+                *) IGNORE_ERRORS=true ; shift 1 ;;
             esac ;; 
         -i|--image)
             case "$2" in
@@ -65,14 +87,11 @@ done
 
 get_cve_info()
 {
-    EXPL=''
-    if [ -f $JSON_FILE ]; then
-        EXPL='false'
+    EXPL='false'
+    if  [ "$IS_ERROR" = false ]; then
         if grep -q $1 $JSON_FILE; then
             EXPL='true'
         fi
-    else 
-        error_exit "$IMAGE_LINK >>> error inthewild.io: please check internet connection and retry"
     fi
     
     # output result
@@ -82,14 +101,28 @@ get_cve_info()
     echo "$EXPL" >> $RES_FILE
 }
 
-echo -ne "  $IMAGE_LINK >>> check inthewild.io\033[0K\r"
-rm -f $JSON_FILE &>/dev/null
-curl -s -XPOST --compressed -L https://inthewild.io/api/exploited \
-        -o $JSON_FILE \
-        -H 'Content-Type: application/json'
-if [ $? -ne 0 ]; then
-    error_exit "$IMAGE_LINK >>> error inthewild.io: please check internet connection and retry"
-fi        
+echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> check  $JSON_FILE\033[0K\r"
+IS_CACHED=false
+if [ -f "$JSON_FILE" ]; then
+    # check date modification
+    if [ $(($(date +%s) - $(stat -c %Y "$JSON_FILE"))) -le 3600 ]; then
+        IS_CACHED=true
+    fi
+fi
+
+if  [ "$IS_CACHED" = false ]; then
+    echo -ne $(date +"%H:%M:%S") "  $IMAGE_LINK >>> check inthewild.io\033[0K\r"
+    rm -f $JSON_FILE
+    curl $DEBUG_CURL --compressed -L https://inthewild.io/api/exploited \
+            -o $JSON_FILE \
+            -H 'Content-Type: application/json' \
+            || error_exit "error inthewild.io: please check internet connection and retry"
+
+    # check json
+    if [ ! -f $JSON_FILE ]; then
+        error_exit "$JSON_FILE not found"
+    fi
+fi
 
 # single cve from argument
 if [ ! -z "$CVE" ]; then
@@ -103,7 +136,7 @@ else
            get_cve_info ${LIST_CVE[$i]}
         done
     else 
-        error_exit "$IMAGE_LINK >>> $INPUT_FILE not found"
+        error_exit "$INPUT_FILE not found"
     fi      
 fi
 

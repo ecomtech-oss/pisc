@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2024
+# Author: @kapistka, 2025
 
 # Show mime-types statistic for image
 
@@ -71,7 +71,10 @@ unpack() {
     # which causes the script to stop.
     # Therefore it is necessary to additionally install GNU-tar in the alpine-OCI-image
     # Also exclude dev/* because nonroot will cause a device creation error
-    tar --ignore-failed-read --one-file-system --exclude dev/* -xf "$1" -C "$IMAGE_DIR/0" &>/dev/null
+    eval tar --ignore-failed-read --one-file-system --no-same-owner --no-same-permissions --mode=+w --exclude dev/* -xf "$1" -C "$IMAGE_DIR/0" 2>/dev/null
+    # if directories after extraction lack the "w" attribute, deletion will result in a "Permission denied" error.
+    # Therefore, we add the "w" attribute to the directories
+    find "$IMAGE_DIR/0" -type d -exec chmod +w {} + >/dev/null 2>&1
     LIST_TAR_FILES=()
     # sometimes "permission denied" was here
     LIST_TAR_FILES=(`find $IMAGE_DIR/0 -type f`)

@@ -1,12 +1,13 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2024
+# Author: @kapistka, 2025
 
 # Usage
-#     ./scan-misconfig.sh [--dont-output-result] -i image_link
+#     ./scan-misconfig.sh [--dont-output-result] [-i image_link | --tar /path/to/private-image.tar]
 # Available options:
 #     --dont-output-result              don't output result into console, only into file
 #     -i, --image string                only this image will be checked. Example: -i r0binak/cve-2024-21626:v4
+#     --tar string                      check local image-tar. Example: --tar /path/to/private-image.tar
 
 # Examples
 # https://www.docker.com/blog/docker-security-advisory-multiple-vulnerabilities-in-runc-buildkit-and-moby/
@@ -49,6 +50,7 @@ MISCONFIG_URL=(
 # var init
 DONT_OUTPUT_RESULT=false
 IMAGE_LINK=''
+LOCAL_FILE=''
 MISCONFIG_RESULT_MESSAGE=''
 MISCONFIG_RESULT=false
 
@@ -70,7 +72,7 @@ rm -f $RES_FILE
 touch $RES_FILE
 
 # read the options
-ARGS=$(getopt -o i: --long dont-output-result,image: -n $0 -- "$@")
+ARGS=$(getopt -o i: --long dont-output-result,image:,tar: -n $0 -- "$@")
 eval set -- "$ARGS"
 
 # extract options and their arguments into variables.
@@ -86,23 +88,46 @@ while true ; do
                 "") shift 2 ;;
                 *) IMAGE_LINK=$2 ; shift 2 ;;
             esac ;;
+        --tar)
+            case "$2" in
+                "") shift 2 ;;
+                *) LOCAL_FILE=$2 ; shift 2 ;;
+            esac ;;     
         --) shift ; break ;;
         *) echo "Wrong usage! Try '$0 --help' for more information." ; exit 2 ;;
     esac
 done
 
 # download and unpack image or use cache 
-/bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
+if [ ! -z "$LOCAL_FILE" ]; then
+    IMAGE_LINK=$LOCAL_FILE
+    /bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh --tar $LOCAL_FILE
+else
+    /bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
+fi
 
-echo -ne "  $IMAGE_LINK >>> scan misconfiguration\033[0K\r"
+
+echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan misconfiguration\033[0K\r"
 
 for f in "$SCRIPTPATH/image"/*.json
 do
     for (( i=0; i<${#MISCONFIG_REGEX[@]}; i++ ));
     do
-        if grep -Eqi ${MISCONFIG_REGEX[$i]} $f; then
-            MISCONFIG_RESULT=true
-            MISCONFIG_RESULT_MESSAGE=$MISCONFIG_RESULT_MESSAGE$'\n  '${MISCONFIG_MESSAGE[$i]}$'\n    '${MISCONFIG_URL[$i]}
+        if grep -Eqi "${MISCONFIG_REGEX[$i]}" $f; then
+            # check exclusions
+            set +e
+            /bin/bash $DEBUG$SCRIPTPATH/check-exclusions.sh -i $IMAGE_LINK --misconfig 12345abcd
+            if [[ $? -eq 1 ]] ; then
+                if [ "$DONT_OUTPUT_RESULT" == "false" ]; then
+                    echo -e "$IMAGE_LINK >>> OK (whitelisted)                      "
+                fi    
+                echo "OK (whitelisted)" > $RES_FILE
+                exit 0
+            else    
+                MISCONFIG_RESULT=true
+                MISCONFIG_RESULT_MESSAGE=$MISCONFIG_RESULT_MESSAGE$'\n   '${MISCONFIG_MESSAGE[$i]}$'\n     '${MISCONFIG_URL[$i]}
+            fi
+            set -e
         fi
     done
 done

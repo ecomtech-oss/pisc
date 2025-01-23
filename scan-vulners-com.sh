@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2024
+# Author: @kapistka, 2025
 
 # Usage
 #     ./scan-vulners-com.sh [--cve cve_id] [--dont-output-result] [-i image_link] --vulners-key vulners_api_key
@@ -8,6 +8,7 @@
 #     --cve string                      specify single cve or script trying to read scan-trivy.cve 
 #     --dont-output-result              don't output result into console, only into file
 #     -i, --image string                only this image will be checked. Example: -i kapistka/log4shell:0.0.3-nonroot
+#     --ignore-errors                   ignore vulners errors (instead, write to $ERROR_FILE)
 #     --vulners-key string              specify vulners API-key, example: ---vulners-key 0123456789ABCDXYZ
 # Example
 #     ./scan-vulners-com.sh --cve CVE-2021-44228 --vulners-key 0123456789ABCDXYZ
@@ -16,31 +17,61 @@
 
 set -Eeo pipefail
 
-# exception handling
-error_exit()
-{
-    echo "$1"
-    exit 1
-}
-
 # var init (don't change)
 CVE=''
 DONT_OUTPUT_RESULT=false
+IGNORE_ERRORS=false
 IMAGE_LINK=''
+IS_ERROR=false
 VULNERS_API_KEY=''
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# check debug mode to debug child scripts and external tools
+DEBUG=''
+DEBUG_CURL='-s '
+if [[ "$-" == *x* ]]; then
+    DEBUG='-x '
+    DEBUG_CURL='-v '
+fi
+# turn on/off debugging for hide sensetive data
+debug_set() {
+    if [ "$1" = false ] ; then
+        set +x
+    else
+        if [ "$DEBUG" != "" ]; then
+            set -x
+        fi
+    fi
+}
 
 INPUT_FILE=$SCRIPTPATH'/scan-trivy.cve'
 JSON_FILE=$SCRIPTPATH'/scan-vulners-com.json'
 RES_FILE=$SCRIPTPATH'/scan-vulners-com.result'
-rm -f $RES_FILE
+ERROR_FILE=$SCRIPTPATH'/scan-vulners-com.error'
+eval "rm -f $RES_FILE $ERROR_FILE"
 touch $RES_FILE
 
+# exception handling
+error_exit()
+{
+    if  [ "$IS_ERROR" = false ]; then
+        IS_ERROR=true
+        if [ "$IGNORE_ERRORS" = true ]; then
+            printf "   $1" > $ERROR_FILE
+            return 0
+        else
+            echo "  $IMAGE_LINK >>> $1                    "
+            exit 1
+        fi
+    fi
+}
+
 # read the options
-ARGS=$(getopt -o i: --long cve:,dont-output-result,image:,vulners-key: -n $0 -- "$@")
+debug_set false
+ARGS=$(getopt -o i: --long cve:,dont-output-result,ignore-errors,image:,vulners-key: -n $0 -- "$@")
 eval set -- "$ARGS"
+debug_set true
 
 # extract options and their arguments into variables.
 while true ; do
@@ -49,11 +80,16 @@ while true ; do
             case "$2" in
                 "") shift 2 ;;
                 *) CVE=$2 ; shift 2 ;;
-            esac ;; 
+            esac ;;
         --dont-output-result)
             case "$2" in
                 "") shift 1 ;;
                 *) DONT_OUTPUT_RESULT=true ; shift 1 ;;
+            esac ;;
+        --ignore-errors)
+            case "$2" in
+                "") shift 1 ;;
+                *) IGNORE_ERRORS=true ; shift 1 ;;
             esac ;; 
         -i|--image)
             case "$2" in
@@ -63,7 +99,7 @@ while true ; do
         --vulners-key)
             case "$2" in
                 "") shift 2 ;;
-                *) VULNERS_API_KEY=$2 ; shift 2 ;;
+                *) debug_set false ; VULNERS_API_KEY=$2 ; debug_set true ; shift 2 ;;
             esac ;; 
         --) shift ; break ;;
         *) echo "Wrong usage! Try '$0 --help' for more information." ; exit 2 ;;
@@ -72,19 +108,21 @@ done
 
 get_cve_info()
 {
-    rm -f $JSON_FILE &>/dev/null
-    curl -s -XPOST --compressed -L https://vulners.com/api/v3/search/id \
+    eval "rm -f $JSON_FILE"
+    debug_set false
+    curl $DEBUG_CURL -XPOST --compressed -L https://vulners.com/api/v3/search/id \
           -o $JSON_FILE \
-          -H 'Content-Type: application/json' --data-binary @- <<EOF
+          -H 'Content-Type: application/json' --data-binary @- <<EOF || error_exit "error vulners.com: please check internet connection and retry"
         {
         "id": "$1",
         "fields": ["*"],
         "apiKey": "$VULNERS_API_KEY"
         }
 EOF
-    EXPL=''
-    EPSS=''
-    CVSS=''
+    debug_set true
+    EXPL=null
+    EPSS=null
+    CVSS=null
     RESPONSE_ERROR=''
     if [ -f $JSON_FILE ]; then
         RESPONSE_ERROR=`jq '.data.error' $JSON_FILE`
@@ -92,13 +130,13 @@ EOF
         EPSS=`jq '.data.documents."'$1'".epss[0].epss' $JSON_FILE`
         CVSS=`jq '.data.documents."'$1'".cvss.score' $JSON_FILE`
     else 
-        error_exit "$IMAGE_LINK >>> error vulners.com: please check api-key, internet connection and retry"
+        error_exit "error vulners.com: please check api-key, internet connection and retry"
     fi 
     if [ $? -ne 0 ]; then
-        error_exit "$IMAGE_LINK >>> error vulners.com: please check api-key, internet connection and retry"
+        error_exit "error vulners.com: please check api-key, internet connection and retry"
     fi 
     if [ ! -z "$RESPONSE_ERROR" ]; then
-        error_exit "$IMAGE_LINK >>> error vulners.com: $RESPONSE_ERROR"
+        error_exit "error vulners.com: $RESPONSE_ERROR"
     fi
     
     # output result
@@ -108,7 +146,7 @@ EOF
     echo "$EXPL" >> $RES_FILE
 }
 
-echo -ne "  $IMAGE_LINK >>> check vulners.com\033[0K\r"
+echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> check vulners.com\033[0K\r"
 
 # single cve from argument
 if [ ! -z "$CVE" ]; then
@@ -122,7 +160,7 @@ else
            get_cve_info ${LIST_CVE[$i]}
         done
     else 
-        error_exit "$IMAGE_LINK >>> $INPUT_FILE not found"
+        error_exit "$INPUT_FILE not found"
     fi      
 fi
 

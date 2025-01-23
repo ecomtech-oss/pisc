@@ -1,26 +1,21 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2024
+# Author: @kapistka, 2025
 
 # Usage
-#     ./scan-virustotal.sh [--dont-adv-search] [--dont-output-result] -i image_link --virustotal-key API_KEY
+#     ./scan-virustotal.sh [--dont-adv-search] [--dont-output-result] [-i image_link | --tar /path/to/private-image.tar] --virustotal-key API_KEY
 # Available options:
 #     --dont-adv-search                 don't use advanced malware search inside layer
 #     --dont-output-result              don't output result into console, only into file
+#     --ignore-errors                   ignore virustotal errors (instead, write to $ERROR_FILE)
 #     -i, --image string                only this image will be checked. Example: -i r0binak/mtkpi:v1.3
+#     --tar string                      check local image-tar. Example: --tar /path/to/private-image.tar
 #     --virustotal-key string           specify virustotal API-key, example: ---virustotal-key 0123456789abcdef
 # Example
 #     ./scan-virustotal.sh --virustotal-key 0123456789abcdef -i r0binak/mtkpi:v1.3
 
 
 set -Eeo pipefail
-
-# exception handling
-error_exit()
-{
-    echo "$1"
-    exit 1
-}
 
 #popular linux MIME-types exclude from malware analysis
 EXCLUDE_MIMES=(
@@ -50,8 +45,11 @@ SLEEP_TIME_AFTER_LIMIT=60
 # var init
 DONT_ADV_SEARCH=false
 DONT_OUTPUT_RESULT=false
+IGNORE_ERRORS=false
 IMAGE_LINK=''
+LOCAL_FILE=''
 IS_BIG_LAYER_REDUCE=false
+IS_ERROR=false
 IS_OK=true
 API_KEY=''
 REQUEST_COUNT=0
@@ -61,13 +59,12 @@ C_BLU='\033[1;34m'
 C_NIL='\033[0m'
 
 EMOJI_SLEEP='\U1F4A4' # zzz
-EMOJI_MALWARE='\U1F9A0' # microbe
+EMOJI_MALWARE='\U1F344' # mushroom
 EMOJI_DEFAULT='\U1F4A9' # shit
 EMOJI_OK='\U1F44D' # thumbs up
 EMOJI_NAMES=(
     'vulnerabil'
-    'xploit'
-    'sploit'
+    'ploit'
     'meter'
     'crypto'
     'miner'
@@ -76,10 +73,10 @@ EMOJI_NAMES=(
     'backdoor'
     'trojan'
     'worm'
+    'virus'
 )
 EMOJI_CODES=(
     '\U1F41E' # bug
-    '\U1F419' # octopus
     '\U1F419' # octopus
     '\U1F419' # octopus
     '\U1F511' # key
@@ -89,15 +86,37 @@ EMOJI_CODES=(
     '\U1F434' # horse
     '\U1F434' # horse
     '\U1F41B' # worm
+    '\U1F9EC' # dna
 )
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-# check debug mode to debug child scripts
+# check debug mode to debug child scripts and external tools
 DEBUG=''
+DEBUG_CURL='-sf '
+DEBUG_TAR='2>/dev/null'
 if [[ "$-" == *x* ]]; then
     DEBUG='-x '
+    DEBUG_CURL=''
+    DEBUG_TAR=''
 fi
+# turn on/off debugging for hide sensetive data
+debug_set() {
+    if [ "$1" = false ] ; then
+        set +x
+    else
+        if [ "$DEBUG" != "" ]; then
+            set -x
+        fi
+    fi
+}
+# silent mode for external tools if not debug
+debug_null() {
+    if [[ "$-" != *x* ]]; then 
+        eval &>/dev/null
+    fi    
+}
+
 
 IMAGE_DIR=$SCRIPTPATH'/image'
 ADVANCED_DIR=$SCRIPTPATH'/advanced'
@@ -109,11 +128,29 @@ UPLOAD_JSON_FILE=$SCRIPTPATH'/virustotal-upload.json'
 RES_FILE=$SCRIPTPATH'/scan-virustotal.result'
 TMP_FILE=$SCRIPTPATH'/virustotal.tmp'
 SORT_FILE=$SCRIPTPATH'/virustotal.sort'
-rm -rf $RES_FILE &>/dev/null
+ERROR_FILE=$SCRIPTPATH'/scan-virustotal.error'
+eval "rm -f $RES_FILE $ERROR_FILE"
+
+# exception handling
+error_exit() 
+{
+    if  [ "$IS_ERROR" = false ]; then
+        IS_ERROR=true
+        if [ "$IGNORE_ERRORS" = true ]; then
+            printf "   $1" > $ERROR_FILE
+            return 0
+        else
+            echo "  $IMAGE_LINK >>> $1                    "
+            exit 1
+        fi
+    fi
+}
 
 # read the options
-ARGS=$(getopt -o i: --long dont-adv-search,dont-output-result,image:,virustotal-key: -n $0 -- "$@")
+debug_set false
+ARGS=$(getopt -o i: --long dont-adv-search,dont-output-result,ignore-errors,image:,virustotal-key:,tar: -n $0 -- "$@")
 eval set -- "$ARGS"
+debug_set true
 
 # extract options and their arguments into variables.
 while true ; do
@@ -127,16 +164,26 @@ while true ; do
             case "$2" in
                 "") shift 1 ;;
                 *) DONT_OUTPUT_RESULT=true ; shift 1 ;;
+            esac ;;
+        --ignore-errors)
+            case "$2" in
+                "") shift 1 ;;
+                *) IGNORE_ERRORS=true ; shift 1 ;;
             esac ;; 
         -i|--image)
             case "$2" in
                 "") shift 2 ;;
                 *) IMAGE_LINK=$2 ; shift 2 ;;
             esac ;;    
+        --tar)
+            case "$2" in
+                "") shift 2 ;;
+                *) LOCAL_FILE=$2 ; shift 2 ;;
+            esac ;;  
         --virustotal-key)
             case "$2" in
                 "") shift 2 ;;
-                *) API_KEY=$2 ; shift 2 ;;
+                *) debug_set false ; API_KEY=$2 ; debug_set true ; shift 2 ;;
             esac ;; 
         --) shift ; break ;;
         *) echo "Wrong usage! Try '$0 --help' for more information." ; exit 2 ;;
@@ -155,7 +202,7 @@ quota_sleep() {
         if [ $(( $REQUEST_COUNT % 4 )) -eq 0 ] && (( $REQUEST_COUNT > 0 )); then
             for (( ii=0; ii<$SLEEP_TIME_AFTER_LIMIT; ii++ ));
             do
-                echo -ne "  $IMAGE_LINK >>> virustotal - wait $(($SLEEP_TIME_AFTER_LIMIT-$ii)) sec (account limit) $EMOJI_SLEEP\033[0K\r" 
+                echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> virustotal - wait $(($SLEEP_TIME_AFTER_LIMIT-$ii)) sec (account limit) $EMOJI_SLEEP\033[0K\r" 
                 sleep 1
             done
         fi  
@@ -188,15 +235,17 @@ hash_search() {
     quota_sleep
     # increasing the request counter (this method is limited by the number per minute/day/month)
     REQUEST_COUNT=$((REQUEST_COUNT+1)) 
-    curl -s --fail --request GET \
+    debug_set false
+    curl $DEBUG_CURL --request GET \
         --url "https://www.virustotal.com/api/v3/search?query=$1" \
         --header "x-apikey: $API_KEY" \
         -o "$JSON_SEARCH_FILE" \
-        || error_exit "$IMAGE_LINK >>> error virustotal.com: please check api-key, internet connection and retry"            
+        || error_exit "error virustotal.com: please check api-key, internet connection and retry"            
+    debug_set true
 
     # check that the scan is completed by last_analysis_date
     LAST_ANALYSIS_DATE=`jq -r '.data[]?.attributes?.last_analysis_date?' $JSON_SEARCH_FILE` \
-        || error_exit "$IMAGE_LINK >>> error virustotal.com: please check api-key"
+        || error_exit "error virustotal.com: please check api-key"
     if [ ! -z "$LAST_ANALYSIS_DATE" ]; then
         
         # get vendors detected malware
@@ -217,14 +266,16 @@ hash_search() {
 # analysis_search UPLOAD_ID
 analysis_search() {
     SEARCH_RESULT='upload'
-    curl -s --fail --request GET \
+    debug_set false
+    curl $DEBUG_CURL --request GET \
         --url "https://www.virustotal.com/api/v3/analyses/$1" \
         --header "x-apikey: $API_KEY" \
         -o "$JSON_SEARCH_FILE" \
-        || error_exit "$IMAGE_LINK >>> error virustotal.com: please check api-key, internet connection and retry"            
+        || error_exit "error virustotal.com: please check api-key, internet connection and retry"            
+    debug_set true
     # check that the scan is completed by status
     ANALYSIS_STATUS=`jq -r '.data?.attributes?.status?' $JSON_SEARCH_FILE` \
-        || error_exit "$IMAGE_LINK >>> error virustotal.com: please check api-key" 
+        || error_exit "error virustotal.com: please check api-key" 
     if [ "$ANALYSIS_STATUS" == "completed" ]; then 
         # get vendors detected malware
         VENDORS=()
@@ -251,11 +302,13 @@ relationship_search() {
     quota_sleep
     # increasing the request counter (this method is limited by the number per minute/day/month)
     REQUEST_COUNT=$((REQUEST_COUNT+1)) 
-    curl -s --fail --request GET \
+    debug_set false
+    curl $DEBUG_CURL --request GET \
         --url "https://www.virustotal.com/api/v3/files/$1/bundled_files?limit=40" \
         --header "x-apikey: $API_KEY" \
         -o "$JSON_RELATIONSHIP_FILE" \
-        || error_exit "$IMAGE_LINK >>> error virustotal.com: please check api-key, internet connection and retry"
+        || error_exit "error virustotal.com: please check api-key, internet connection and retry"
+    debug_set true    
     REL_STAT=()
     REL_PATH=()
     REL_PATH+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .context_attributes?.filename?' $JSON_RELATIONSHIP_FILE`)
@@ -350,20 +403,22 @@ upload() {
         UPLOAD_RESULT='big'
     else  
         # show human readable size of file
-        echo -ne "$ECHO_MESSAGE (`stat -c%s "$1" | numfmt --to=iec`)\033[0K\r"
+        echo -ne "  $(date +"%H:%M:%S") $ECHO_MESSAGE (`stat -c%s "$1" | numfmt --to=iec`)\033[0K\r"
         # if file size is less than 32 MB, then we use the usual url for uploading
         if [[ $(stat -c%s "$1") -lt 33554432 ]]; then
             UPLOAD_URL='https://www.virustotal.com/api/v3/files'
         # if file size is more than 32 MB, but less than 650 MB, request a special url for uploading
         else
             # this method is not limited to a free account, so we do not include waiting
-            curl -s --fail --request GET \
+            debug_set false
+            curl $DEBUG_CURL --request GET \
                 --url https://www.virustotal.com/api/v3/files/upload_url \
                 --header "x-apikey: $API_KEY" \
                 -o "$URL_FILE" \
-                || error_exit "$IMAGE_LINK >>> error virustotal.com: please check api-key, internet connection and retry"
+                || error_exit "error virustotal.com: please check api-key, internet connection and retry"
+            debug_set true    
             UPLOAD_URL=`jq -r '.data' $URL_FILE` \
-                || error_exit "$IMAGE_LINK >>> error virustotal.com: please check api-key"
+                || error_exit "error virustotal.com: please check api-key"
         fi
         # 1 minute delay after 4 requests is the limit of the free virustotal account
         quota_sleep
@@ -371,35 +426,41 @@ upload() {
         REQUEST_COUNT=$((REQUEST_COUNT+1))    
         # upload the file to the desired url
         # method returns the id of the uploaded file
-        curl -s --fail --request POST \
+
+        debug_set false
+        curl $DEBUG_CURL --request POST \
             --url "$UPLOAD_URL" \
             --header "accept: application/json" \
             --header "content-type: multipart/form-data" \
             --header "x-apikey: $API_KEY" \
             -o "$UPLOAD_JSON_FILE" \
             --form file="@$1" \
-            || error_exit "$IMAGE_LINK >>> error virustotal.com: please check api-key, internet connection and retry"
+            || error_exit "error virustotal.com: please check api-key, internet connection and retry"
+        debug_set true    
         UPLOAD_RESULT=`jq -r '.data?.id' $UPLOAD_JSON_FILE` \
-            || error_exit "$IMAGE_LINK >>> error virustotal.com: please check api-key"    
+            || error_exit "error virustotal.com: please check api-key"    
     fi
 }
 
 # unpack tar to image/0 and get list of files
 unpack() {
-    echo -ne "  $IMAGE_LINK >>> unpack layer\033[0K\r"
+    echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> unpack layer $FILES_COUNTER/$FILES_TOTAL\033[0K\r"
     # unpack the layer into a folder
     # sometimes rm and tar occurs an error
     # therefore disable error checking
     set +Eeo pipefail
-    rm -rf "$IMAGE_DIR/0" &>/dev/null
-    mkdir "$IMAGE_DIR/0" &>/dev/null
+    `rm -rf "$IMAGE_DIR/0"` debug_null
+    `mkdir "$IMAGE_DIR/0"` debug_null
     # if you run tar embedded in alpine (OCI-image based on alpine)
     # then there is a tar of a different version (busybox) and occurs errors when unpacking
     # unreadable files, (in this place unreadable files may occur)
     # which causes the script to stop.
-    # Therefore it is necessary to additionally install GNU-tar in the alpine-OCI-image
+    # Therefore, it is necessary to additionally install GNU-tar in the alpine-OCI-image
     # Also exclude dev/* because nonroot will cause a device creation error
-    tar --ignore-failed-read --one-file-system --exclude dev/* -xf "$1" -C "$IMAGE_DIR/0" &>/dev/null
+    eval tar --ignore-failed-read --one-file-system --no-same-owner --no-same-permissions --mode=+w --exclude dev/* -xf "$1" -C "$IMAGE_DIR/0" $DEBUG_TAR
+    # if directories after extraction lack the "w" attribute, deletion will result in a "Permission denied" error.
+    # Therefore, we add the "w" attribute to the directories
+    find "$IMAGE_DIR/0" -type d -exec chmod +w {} + >/dev/null 2>&1
     LIST_TAR_FILES=()
     # sometimes "permission denied" was here
     LIST_TAR_FILES=(`find $IMAGE_DIR/0 -type f`)
@@ -419,12 +480,12 @@ unpack() {
 # find any file of malware mime-types
 # mime-types path_to_tar
 mime-types() {
-    echo -ne "  $IMAGE_LINK >>> check mime-types\033[0K\r"
+    echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> check mime-types $FILES_COUNTER/$FILES_TOTAL\033[0K\r"
     for (( ii=0; ii<${#LIST_TAR_FILES[@]}; ii++ ));
     do
         MIME_TYPE=(`file --mime-type ${LIST_TAR_FILES[$ii]} | awk '{print $2}'`)
         if [[ $MIME_TYPE == application/x-* ]] || [[ $MIME_TYPE == text/x-* ]]; then
-            # popular excludes
+            # popular exclusions
             EXCLUDE=false
             for (( iii=0; iii<${#EXCLUDE_MIMES[@]}; iii++ )); do
                 if [[ ${EXCLUDE_MIMES[iii]} = $MIME_TYPE ]]; then
@@ -454,11 +515,11 @@ mime-types() {
     done
     # rename .list.tmp to .list (cache is ready)
     if [ -f $1.list.tmp ]; then
-        mv $1.list.tmp $1.list &>/dev/null
+        `mv $1.list.tmp $1.list` debug_null
     fi
     # rename .list.reduce.tmp to .list.reduce (cache for reduce is ready)
     if [ -f $1.list.reduce.tmp ]; then
-        mv $1.list.reduce.tmp $1.list.reduce &>/dev/null
+        `mv $1.list.reduce.tmp $1.list.reduce` debug_null
     fi
 }
 
@@ -470,24 +531,24 @@ reduce-size() {
     SIZE_LAYER=`stat -c%s "$1"`
     if [[ $SIZE_LAYER -gt 629145600 ]]; then
         # rename tar if it is big - for ignoring it next time
-        mv $1 $1.big &>/dev/null
+        `mv $1 $1.big` debug_null
         # var for logic inside function mime-types
         IS_BIG_LAYER_REDUCE=true
         # function mime-types with exteded logic
         mime-types $1
-        echo -ne "  $IMAGE_LINK >>> reduce layer size (`echo $SIZE_LAYER | numfmt --to=iec`)\033[0K\r"
+        echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> reduce layer size $FILES_COUNTER/$FILES_TOTAL (`echo $SIZE_LAYER | numfmt --to=iec`)\033[0K\r"
         # pack files to upload (compression doesn't make much sense)
-        tar -cvf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $1.list &>/dev/null
-        SHA256=`sha256sum $IMAGE_DIR/tmp.tar | awk '{ print $1 }'` &>/dev/null
-        mv $IMAGE_DIR/tmp.tar $IMAGE_DIR/$SHA256.tar &>/dev/null
+        eval tar -cf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $1.list $DEBUG_TAR
+        SHA256=`sha256sum $IMAGE_DIR/tmp.tar | awk '{ print $1 }'`
+        `mv $IMAGE_DIR/tmp.tar $IMAGE_DIR/$SHA256.tar` debug_null
         # check size again
         SIZE_LAYER=`stat -c%s "$IMAGE_DIR/$SHA256.tar"`
         if [[ $SIZE_LAYER -gt 629145600 ]]; then
             # rename tar if it is big - for ignoring it next time
-            mv $IMAGE_DIR/$SHA256.tar $IMAGE_DIR/$SHA256.tar.old &>/dev/null
+            `mv $IMAGE_DIR/$SHA256.tar $IMAGE_DIR/$SHA256.tar.old` debug_null
             # sort files by size
             sort -gr $1.list.reduce > $1.list.reduce.sort
-            # summry size we should remove
+            # summary size we should remove
             let SIZE_REMOVE=$SIZE_LAYER-629145600
             # get list of sizes from sort file
             LIST_SORT_SIZES=(`awk '{print $1}' $1.list.reduce.sort`)
@@ -501,7 +562,7 @@ reduce-size() {
                 let SIZE_COUNTER=$SIZE_COUNTER+${LIST_SORT_SIZES[$ii]}
                 # if summ file sizes more when size to remove
                 if [[ $SIZE_COUNTER -gt $SIZE_REMOVE ]]; then 
-                    let REMOVE_COUNT=$ii 
+                    REMOVE_COUNT=$ii 
                     break 
                 fi
             done
@@ -516,20 +577,40 @@ reduce-size() {
                 fi
             done  
             if [ -f $1.list.reduce-tar.tmp ]; then
-                mv $1.list.reduce-tar.tmp $1.list.reduce-tar &>/dev/null
+                `mv $1.list.reduce-tar.tmp $1.list.reduce-tar` debug_null
             fi  
             # pack files to upload (compression important for tar-metadata)
-            tar -czvf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $1.list.reduce-tar &>/dev/null
-            SHA256=`sha256sum $IMAGE_DIR/tmp.tar | awk '{ print $1 }'` &>/dev/null
-            mv $IMAGE_DIR/tmp.tar $IMAGE_DIR/$SHA256.tar &>/dev/null
-            # set f as new reduced layer
-            f=$IMAGE_DIR/$SHA256.tar
+            eval tar -czf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $1.list.reduce-tar $DEBUG_TAR
+            SHA256=`sha256sum $IMAGE_DIR/tmp.tar | awk '{ print $1 }'`
+            `mv $IMAGE_DIR/tmp.tar $IMAGE_DIR/$SHA256.tar` debug_null
         fi
+        # set f as new reduced layer
+        f=$IMAGE_DIR/$SHA256.tar
     fi
 }
 
+# check exclusions before
+set +e
+if [ -z "$LOCAL_FILE" ]; then
+    # check * pattern (12345abcd) for IMAGE_LINK
+    /bin/bash $DEBUG$SCRIPTPATH/check-exclusions.sh -i $IMAGE_LINK --malware 12345abcd
+    if [[ $? -eq 1 ]] ; then
+        if [ "$DONT_OUTPUT_RESULT" == "false" ]; then
+            echo -e "$IMAGE_LINK >>> OK (whitelisted)                      "
+        fi    
+        echo "OK (whitelisted)" > $RES_FILE
+        exit 0
+    fi    
+fi
+set -e
+
 # download and unpack image or use cache 
-/bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
+if [ ! -z "$LOCAL_FILE" ]; then
+    IMAGE_LINK=$LOCAL_FILE
+    /bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh --tar $LOCAL_FILE
+else
+    /bin/bash $DEBUG$SCRIPTPATH/scan-download-unpack.sh -i $IMAGE_LINK
+fi
 
 # unpack layers and check mime-types
 # if we find any file of malware mime-types
@@ -540,8 +621,12 @@ LIST_LAYERS_TO_ANALYSIS=()
 # list of reduced layers (true/false)
 LIST_LAYERS_REDUCE=()
 # go through layers-archives
-for f in "$IMAGE_DIR"/*.tar
+FILES=("$IMAGE_DIR"/*.tar)
+FILES_TOTAL=${#FILES[@]}
+FILES_COUNTER=0
+for f in "${FILES[@]}"; 
 do
+    FILES_COUNTER=$((FILES_COUNTER+1))
     IS_ANALYSIS=false
     IS_BIG_LAYER_REDUCE=false
     unpack $f
@@ -564,7 +649,7 @@ done
 LIST_RESULT=()
 for (( i=0; i<${#LIST_LAYERS_TO_ANALYSIS[@]}; i++ ));
 do
-    echo -ne "  $IMAGE_LINK >>> virustotal hash search $((i+1))/${#LIST_LAYERS_TO_ANALYSIS[@]}\033[0K\r"
+    echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> virustotal hash search $((i+1))/${#LIST_LAYERS_TO_ANALYSIS[@]}\033[0K\r"
     # first mark all values as unknown
     LIST_RESULT[$i]='unknown'
     hash_search ${LIST_LAYERS_TO_ANALYSIS[$i]}
@@ -577,7 +662,7 @@ IS_UPLOAD=false
 LIST_UPLOAD_ID=()
 for (( i=0; i<${#LIST_LAYERS_TO_ANALYSIS[@]}; i++ ));
 do
-    ECHO_MESSAGE="  ${IMAGE_LINK} >>> upload to virustotal $((i+1))/${#LIST_LAYERS_TO_ANALYSIS[@]}"
+    ECHO_MESSAGE="${IMAGE_LINK} >>> upload to virustotal $((i+1))/${#LIST_LAYERS_TO_ANALYSIS[@]}"
     LIST_UPLOAD_ID[$i]=''
     if [ "${LIST_RESULT[$i]}" == "unknown" ]; then
         upload "$IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar"
@@ -593,7 +678,7 @@ done
     
 # if something was upload to virustotal, you need to wait until the analysis passes
 if [ "$IS_UPLOAD" = true ]; then
-    echo -ne "  $IMAGE_LINK >>> wait for virustotal analysis $EMOJI_SLEEP\033[0K\r"
+    echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> wait for virustotal analysis $EMOJI_SLEEP\033[0K\r"
     # check analysis ending for all layers
     for (( j=0; j<$MAX_ANALYSIS_TIME; j++ )); do
         # every 5 sec send request for checking
@@ -628,7 +713,6 @@ done
 # This will allow to get more related malware files
 
 LIST_RESULT_ADV=()
-# count(LIST_LAYERS_TO_ANALYSIS_ADV) = count(LIST_LAYERS_TO_ANALYSIS)
 LIST_LAYERS_TO_ANALYSIS_ADV=()
 LIST_UPLOAD_ID_ADV=()
 if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
@@ -642,20 +726,20 @@ if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
             unpack $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar
             mime-types $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar
             
-            echo -ne "  $IMAGE_LINK >>> advanced malware analysis (pack)\033[0K\r"
+            echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> advanced malware analysis (pack)\033[0K\r"
 
             # check if original layer was compressed
             if (file ${LIST_LAYERS_TO_ANALYSIS[$i]}.tar | grep -q compressed ) ; then
                 # pack files to upload  (with compression)
-                tar -czvf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar.list &>/dev/null
+                eval tar -czf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar.list $DEBUG_TAR
             else
                 # pack files to upload  (without compression)
-                tar -cvf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar.list &>/dev/null
-            fi    
-            SHA256=`sha256sum $IMAGE_DIR/tmp.tar | awk '{ print $1 }'` &>/dev/null
-            mv $IMAGE_DIR/tmp.tar $IMAGE_DIR/$SHA256.tar &>/dev/null
+                eval tar -cf "$IMAGE_DIR/tmp.tar" -C $IMAGE_DIR/0 -T $IMAGE_DIR/${LIST_LAYERS_TO_ANALYSIS[$i]}.tar.list $DEBUG_TAR
+            fi   
+            SHA256=`sha256sum $IMAGE_DIR/tmp.tar | awk '{ print $1 }'`
+            `mv $IMAGE_DIR/tmp.tar $IMAGE_DIR/$SHA256.tar` debug_null
             
-            echo -ne "  $IMAGE_LINK >>> virustotal advanced hash search\033[0K\r"
+            echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> virustotal advanced hash search\033[0K\r"
             LIST_LAYERS_TO_ANALYSIS_ADV[$i]=$SHA256
             hash_search $SHA256
             LIST_RESULT_ADV[$i]=$SEARCH_RESULT
@@ -664,7 +748,7 @@ if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
 
             # upload tar with executables inside
             if [ "${LIST_RESULT_ADV[$i]}" == "unknown" ]; then
-                ECHO_MESSAGE="  ${IMAGE_LINK} >>> upload to advanced virustotal analysis"
+                ECHO_MESSAGE="${IMAGE_LINK} >>> upload to advanced virustotal analysis"
                 upload "$IMAGE_DIR/$SHA256.tar"
                 if [ ! -z "$UPLOAD_RESULT" ]; then
                     LIST_RESULT_ADV[$i]='upload'
@@ -675,13 +759,13 @@ if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
             # we need to delete this tar so that 
             # it does not upload onto the virustotal 
             # the next time if it is run from the cache
-            rm -rf "$IMAGE_DIR/$SHA256.tar" &>/dev/null   
+            `rm -rf "$IMAGE_DIR/$SHA256.tar"` debug_null
         fi    
     done
 
     if [ "$IS_UPLOAD" = true ]; then
         # we need to wait until the analysis passes
-        echo -ne "  $IMAGE_LINK >>> wait for advanced virustotal analysis $EMOJI_SLEEP\033[0K\r"
+        echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> wait for advanced virustotal analysis $EMOJI_SLEEP\033[0K\r"
         # check analysis ending for all layers
         for (( j=0; j<$MAX_ANALYSIS_TIME; j++ )); do
             # every 5 sec send request for checking
@@ -702,7 +786,7 @@ if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
         done
     fi    
     
-    echo -ne "  $IMAGE_LINK >>> virustotal relationship search\033[0K\r"
+    echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> virustotal relationship search\033[0K\r"
     LIST_RESULT_PRINT=()
     for (( i=0; i<${#LIST_LAYERS_TO_ANALYSIS[@]}; i++ ));
     do
@@ -711,13 +795,13 @@ if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
             relationship_search ${LIST_LAYERS_TO_ANALYSIS[$i]}
             # copy result to another array
             SEARCH_RESULT_FIRST=("${SEARCH_RELATIONS_RESULT[@]}") 
-            LIST_RESULT_PRINT[$i]='    https://www.virustotal.com/gui/file/'${LIST_LAYERS_TO_ANALYSIS[$i]}
+            LIST_RESULT_PRINT[$i]='     https://www.virustotal.com/gui/file/'${LIST_LAYERS_TO_ANALYSIS[$i]}
 
             if [ "${LIST_RESULT_ADV[$i]}" == "bad" ]; then
                 relationship_search ${LIST_LAYERS_TO_ANALYSIS_ADV[$i]}
                 # copy result to another array
                 SEARCH_RESULT_SECOND=("${SEARCH_RELATIONS_RESULT[@]}") 
-                LIST_RESULT_PRINT[$i]=${LIST_RESULT_PRINT[$i]}$'\n    https://www.virustotal.com/gui/file/'${LIST_LAYERS_TO_ANALYSIS_ADV[$i]}
+                LIST_RESULT_PRINT[$i]=${LIST_RESULT_PRINT[$i]}$'\n     https://www.virustotal.com/gui/file/'${LIST_LAYERS_TO_ANALYSIS_ADV[$i]}
             fi  
 
             SEARCH_RELATIONS_RESULT=("${SEARCH_RESULT_FIRST[@]}")
@@ -753,7 +837,7 @@ if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
                 echo "$SEARCH_RESULT" > $TMP_FILE
                 sort $TMP_FILE > $SORT_FILE
                 xargs -0 -n3 < $SORT_FILE | column -t -s' ' > $TMP_FILE
-                sed 's/^/      /' $TMP_FILE > $SORT_FILE
+                sed 's/^/       /' $TMP_FILE > $SORT_FILE
                 SEARCH_RESULT=$(<$SORT_FILE)  
                 # for print
                 LIST_RESULT_PRINT[$i]=${LIST_RESULT_PRINT[$i]}$'\n'$SEARCH_RESULT
@@ -770,14 +854,14 @@ if [ "$IS_OK" = false ]; then
     do
         if [ "${LIST_RESULT[$i]}" == "bad" ]; then 
             if [ "${LIST_LAYERS_REDUCE[$i]}" == false ]; then
-                RESULT_MESSAGE=$RESULT_MESSAGE$'\n''  layer:'${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}
+                RESULT_MESSAGE=$RESULT_MESSAGE$'\n''   layer:'${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}
             else
-                RESULT_MESSAGE=$RESULT_MESSAGE$'\n''  layer:'${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}' (reduce)'
+                RESULT_MESSAGE=$RESULT_MESSAGE$'\n''   layer:'${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}' (reduce)'
             fi
             RESULT_MESSAGE=$RESULT_MESSAGE$'\n'${LIST_RESULT_PRINT[$i]}
         fi
         if [ "${LIST_RESULT[$i]}" == "unknown" ]; then
-            RESULT_MESSAGE=$RESULT_MESSAGE$'\n  layer '${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}' is unknown for virustotal'
+            RESULT_MESSAGE=$RESULT_MESSAGE$'\n   layer '${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}' is unknown for virustotal'
         fi
     done                   
 fi
