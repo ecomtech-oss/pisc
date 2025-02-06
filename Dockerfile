@@ -1,7 +1,7 @@
 FROM aquasec/trivy:0.58.2 AS trivy
 
 FROM alpine:3
-RUN apk update && apk upgrade && apk --no-cache add bash coreutils curl jq yq util-linux skopeo file tar
+RUN apk update && apk upgrade && apk --no-cache add bash coreutils curl jq yq util-linux skopeo file tar sqlite
 COPY --from=trivy /contrib /contrib
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 

@@ -8,6 +8,7 @@
 #     --dont-output-result              don't output result into console, only into file
 #     --ignore-errors                   ignore trivy errors (instead, write to $ERROR_FILE)
 #     -i, --image string                only this image will be checked. Example: -i kapistka/log4shell:0.0.3-nonroot
+#     --severity                        severities of vulnerabilities (UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL) default [HIGH,CRITICAL]
 #     --tar string                      check local image-tar. Example: --tar /path/to/private-image.tar
 #     --trivy-server string             use trivy server if you can. Specify trivy URL, example: --trivy-server http://trivy.something.io:8080
 #     --trivy-token string              use trivy server if you can. Specify trivy token, example: --trivy-token 0123456789abZ
@@ -27,6 +28,7 @@ IS_ERROR=false
 LOCAL_FILE=''
 IS_EXPLOITABLE=false
 IS_EXLUDED=false
+SEVERITY='HIGH,CRITICAL'
 TRIVY_INPUT=''
 TRIVY_RESULT_MESSAGE=''
 TRIVY_SERVER=''
@@ -35,7 +37,7 @@ VULNERS_API_KEY=''
 
 C_RED='\033[0;31m'
 C_NIL='\033[0m'
-EMOJI_EXPLOIT='\U1F41E' # lady beetle
+EMOJI_VULN='\U1F41E' # lady beetle
 EMOJI_EXCLUDE='\U1F648' # see-no-evil monkey
 
 # it is important for run *.sh by ci-runner
@@ -91,7 +93,7 @@ error_exit()
 
 # read the options
 debug_set false
-ARGS=$(getopt -o i: --long dont-output-result,ignore-errors,image:,tar:,trivy-server:,trivy-token:,vulners-key: -n $0 -- "$@")
+ARGS=$(getopt -o i: --long dont-output-result,ignore-errors,image:,severity:,tar:,trivy-server:,trivy-token:,vulners-key: -n $0 -- "$@")
 eval set -- "$ARGS"
 debug_set true
 
@@ -113,6 +115,11 @@ while true ; do
                 "") shift 2 ;;
                 *) IMAGE_LINK=$2 ; shift 2 ;;
             esac ;;
+        --severity)
+            case "$2" in
+                "") shift 2 ;;
+                *) SEVERITY=$2 ; shift 2 ;;
+            esac ;; 
         --tar)
             case "$2" in
                 "") shift 2 ;;
@@ -153,11 +160,11 @@ echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan vulnerabilities by trivy\03
 debug_set false
 if [ -z "$TRIVY_TOKEN" ]; then
     debug_set true
-    eval "trivy image --timeout 15m  --scanners vuln -f json -o $JSON_FILE --severity CRITICAL,HIGH --input $TRIVY_INPUT $DEBUG_TRIVY" \
+    eval "trivy image --timeout 15m  --scanners vuln -f json -o $JSON_FILE --severity $SEVERITY --input $TRIVY_INPUT $DEBUG_TRIVY" \
     || error_exit "error trivy client"
 # if trivy-token is specified, then we use the trivy-server
 else
-    eval "trivy image --timeout 15m  --scanners vuln --server $TRIVY_SERVER --token $TRIVY_TOKEN -f json -o $JSON_FILE --severity CRITICAL,HIGH --input $TRIVY_INPUT $DEBUG_TRIVY" \
+    eval "trivy image --timeout 15m  --scanners vuln --server $TRIVY_SERVER --token $TRIVY_TOKEN -f json -o $JSON_FILE --severity $SEVERITY --input $TRIVY_INPUT $DEBUG_TRIVY" \
     || eval "trivy image --timeout 15m  --scanners vuln -f json -o $JSON_FILE --severity CRITICAL,HIGH --input $TRIVY_INPUT $DEBUG_TRIVY" \
     || error_exit "error trivy server/client"
 fi
@@ -225,6 +232,16 @@ do
     echo "${LIST_VULN[$i]}" >> $CVE_FILE
 done
 
+LIST_SCORE=()
+for (( i=0; i<$LIST_length; i++ ));
+do
+    L=()
+    L=$(jq -r --arg CVE "${LIST_VULN[$i]}" '.Results[]?.Vulnerabilities[]? | select(.VulnerabilityID == $CVE) | .CVSS? // {} | to_entries[]? | .value.V3Score? // empty' "$JSON_FILE") \
+    || error_exit "error parsing Score $JSON_FILE"
+    [[ -z "$L" ]] && L="-"
+    LIST_SCORE+=($(echo "$L" | sort -nr | head -n1))
+done
+
 LIST_EXPL=()
 if [ "$IS_ERROR" = false ]; then
     # exploit analysis by vulners.com
@@ -254,7 +271,7 @@ do
             IS_EXLUDED=true
         else
             IS_EXPLOITABLE=true
-            TRIVY_RESULT_MESSAGE=$TRIVY_RESULT_MESSAGE$'\n '${LIST_VULN[$i]}' '${LIST_SVR[$i]}' '${LIST_FIXED[$i]}' '${LIST_PKG[$i]}
+            TRIVY_RESULT_MESSAGE=$TRIVY_RESULT_MESSAGE$'\n '${LIST_VULN[$i]}' '${LIST_SVR[$i]}' '${LIST_SCORE[$i]}' '${LIST_FIXED[$i]}' '${LIST_PKG[$i]}
         fi
     fi	  
 done
@@ -263,19 +280,36 @@ set -e
 # result: output to console and write to file
 if [ "$IS_EXPLOITABLE" = true ]; then
     # begin draw beauty table
-    TRIVY_RESULT_MESSAGE=" CVE SEVERITY FIXED PACKAGE"$TRIVY_RESULT_MESSAGE
+    TRIVY_RESULT_MESSAGE=" CVE SEVERITY SCORE FIXED PACKAGE"$TRIVY_RESULT_MESSAGE
     echo "$TRIVY_RESULT_MESSAGE" > $TMP_FILE
     column -t -s' ' $TMP_FILE > $RES_FILE
     sed -i 's/^/ /' $RES_FILE
     TRIVY_RESULT_MESSAGE=$(<$RES_FILE)
     # end draw beauty table
-    TRIVY_RESULT_MESSAGE="$EMOJI_EXPLOIT $C_RED$IMAGE_LINK$C_NIL >>> detected exploitable vulnerabilities"$'\n'$TRIVY_RESULT_MESSAGE 
+    TRIVY_RESULT_MESSAGE="$EMOJI_VULN $C_RED$IMAGE_LINK$C_NIL >>> detected exploitable vulnerabilities"$'\n'$TRIVY_RESULT_MESSAGE 
+    # insert info about exploits
+    TRIVY_RESULT_MESSAGE_WITH_EXPL=""
+    mapfile -t LINES <<< "$TRIVY_RESULT_MESSAGE"
+    for (( i=0; i<${#LINES[@]}; i++ )); do
+        TRIVY_RESULT_MESSAGE_WITH_EXPL+="${LINES[$i]}"$'\n'
+        # ignore 1 and 2 lines
+        if [[ $i -gt 1 ]]; then
+            CVE_ID=$(echo "${LINES[$i]}" | awk '{print $1}')
+            if [[ "$CVE_ID" == CVE-* ]]; then
+                F="$SCRIPTPATH/$CVE_ID.expl"
+                if [[ -f "$F" ]]; then
+                    TRIVY_RESULT_MESSAGE_WITH_EXPL+="$(cat "$F")"$'\n'
+                fi
+            fi
+        fi
+    done
+    # whitelist
     if [ "$IS_EXLUDED" == "true" ]; then
-        TRIVY_RESULT_MESSAGE=$TRIVY_RESULT_MESSAGE'\n'"$EMOJI_EXCLUDE Some CVEs or packages are whitelisted"
+        TRIVY_RESULT_MESSAGE_WITH_EXPL=$TRIVY_RESULT_MESSAGE_WITH_EXPL'\n'"$EMOJI_EXCLUDE Some CVEs or packages are whitelisted"
     fi
-    echo "$TRIVY_RESULT_MESSAGE" > $RES_FILE
+    echo "$TRIVY_RESULT_MESSAGE_WITH_EXPL" > $RES_FILE
     if [ "$DONT_OUTPUT_RESULT" == "false" ]; then  
-        echo -e "$TRIVY_RESULT_MESSAGE"
+        echo -e "$TRIVY_RESULT_MESSAGE_WITH_EXPL"
     fi 
 else
     if [ "$IS_EXLUDED" == "false" ]; then 

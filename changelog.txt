@@ -1,3 +1,12 @@
+v0.17.0
+Added
+    Extended exploit database is now used.
+    Displaying exploit links + 💀 for real exploitation.
+    Displaying CVSS max score
+    Severity parameter (default: CRITICAL,HIGH).
+Fixed
+    Issues with file system permission handling in layers.
+
 v0.16.0
 Added
     Support for exclusions (refer to check-exclusions.sh for the file format).

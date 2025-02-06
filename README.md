@@ -47,6 +47,7 @@ Flags:
   -m, --misconfig                 Check for dangerous image misconfigurations.
   --tar <string>                  Check a local TAR file containing image layers.
                                   Example: `--tar /path/to/private-image.tar`.
+  --severity                      severities of vulnerabilities (UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL). Default [HIGH,CRITICAL].
   --trivy-server <string>         Specify a Trivy-server URL for vulnerability scanning.  
                                   Example: `--trivy-server http://trivy.something.io:8080`. 
   --trivy-token <string>          Provide a Trivy-server API token. Example: `--trivy-token 0123456789abZ`.
@@ -97,19 +98,71 @@ security_scan:
        root/liblzma.so.5.6.0.patch  37/64  🐴  trojan.xzbackdoor/cve20243094
 ```
 ```bash
-# log4shell-vulnerability + exploit
-./scan.sh -delm --virustotal-key <virustotal-api-key> -i kapistka/log4shell:0.0.3-nonroot
-════════════════════════════════════════
-🍄 kapistka/log4shell:0.0.3-nonroot >>> virustotal detected malicious file
-   layer:7c9ba75b
-     https://www.virustotal.com/gui/file/7c9ba75bf4cd4302633e29eea466489cfc98273377d834bc7603f10572ca1e97
-🐞 kapistka/log4shell:0.0.3-nonroot >>> detected exploitable vulnerabilities
-   CVE             SEVERITY  FIXED                                 PACKAGE
-   CVE-2016-8735   CRITICAL  6.0.48,7.0.73,8.0.39,8.5.7,9.0.0.M12  org.apache.tomcat:tomcat-catalina
-   CVE-2018-1123   HIGH      2:3.3.9-9+deb8u1                      libprocps3
-   CVE-2021-44228  CRITICAL  2.15.0,2.3.1,2.12.2                   org.apache.logging.log4j:log4j-core
-   CVE-2021-45046  CRITICAL  2.16.0,2.12.2                         org.apache.logging.log4j:log4j-core
-📆 kapistka/log4shell:0.0.3-nonroot >>> created: 2023-04-18. Find another image
+# vulnerabilities + exploit
+./scan.sh -e -i registry.k8s.io/kube-proxy:v1.27.6
+════════════════════════════════════════════════
+🐞 registry.k8s.io/kube-proxy:v1.27.6 >>> detected exploitable vulnerabilities
+   CVE             SEVERITY  SCORE  FIXED            PACKAGE
+   CVE-2023-45288  HIGH      7.5    1.21.9,1.22.2    stdlib
+       2024-04-12  https://github.com/hex0punk/cont-flood-poc
+   CVE-2023-4911   HIGH      7.8    2.31-13+deb11u7  libc6
+       2024-02-22  http://packetstormsecurity.com/files/174986/glibc-ld.so-Local-Privilege-Escalation.html
+       2024-02-22  http://packetstormsecurity.com/files/176288/Glibc-Tunables-Privilege-Escalation.html
+       2024-02-22  http://seclists.org/fulldisclosure/2023/Oct/11
+       2023-10-05  http://www.openwall.com/lists/oss-security/2023/10/03/2
+    💀 2023-11-03  https://blog.aquasec.com/loony-tunables-vulnerability-exploited-by-kinsing
+       2023-10-28  https://github.com/Diego-AltF4/CVE-2023-4911
+       2023-10-04  https://github.com/Green-Avocado/CVE-2023-4911
+       2023-10-25  https://github.com/KernelKrise/CVE-2023-4911
+       2023-10-04  https://github.com/RickdeJager/CVE-2023-4911
+       2023-10-17  https://github.com/chaudharyarjun/LooneyPwner
+       2023-10-10  https://github.com/hadrian3689/looney-tunables-CVE-2023-4911
+       2023-10-04  https://github.com/leesh3288/CVE-2023-4911
+       2023-12-20  https://github.com/rapid7/metasploit-framework/blob/master/modules/exploits/linux/local/glibc_tunables_priv_esc.rb
+       2023-10-11  https://github.com/ruycr4ft/CVE-2023-4911
+       2024-03-16  https://github.com/xem6/CVE-2023-4911
+       2023-10-05  https://lists.fedoraproject.org/archives/list/package-announce@lists.fedoraproject.org/message/DFG4P76UHHZEWQ26FWBXG76N2QLKKPZA/
+    💀 2023-11-21  https://www.cisa.gov/known-exploited-vulnerabilities-catalog
+       2023-10-05  https://www.qualys.com/2023/10/03/cve-2023-4911/looney-tunables-local-privilege-escalation-glibc-ld-so.txt
+   CVE-2024-21626  HIGH      8.6    1.1.12           github.com/opencontainers/runc
+       2024-02-09  http://packetstormsecurity.com/files/176993/runc-1.1.11-File-Descriptor-Leak-Privilege-Escalation.html
+       2024-02-01  https://github.com/NitroCao/CVE-2024-21626
+       2024-03-17  https://github.com/Sk3pper/CVE-2024-21626
+       2024-02-05  https://github.com/V0WKeep3r/CVE-2024-21626-runcPOC
+       2024-02-01  https://github.com/Wall1e/CVE-2024-21626-POC
+       2024-02-02  https://github.com/cdxiaodong/CVE-2024-21626
+       2024-02-02  https://github.com/laysakura/CVE-2024-21626-demo
+       2024-02-09  https://github.com/opencontainers/runc/security/advisories/GHSA-xr7r-f8xq-vfvv
+       2024-02-02  https://github.com/rapid7/metasploit-framework/blob/master/modules/exploits/linux/local/runc_cwd_priv_esc.rb
+       2024-02-02  https://github.com/zhangguanzhang/CVE-2024-21626
+   CVE-2024-2961   HIGH      8.8    2.31-13+deb11u9  libc6
+       2024-05-27  https://github.com/ambionics/cnext-exploits
+       2024-10-15  https://github.com/rapid7/metasploit-framework/blob/master/modules/exploits/linux/http/magento_xxe_to_glibc_buf_overflow.rb
+       2024-05-20  https://github.com/rvizx/CVE-2024-2961
+   CVE-2024-45337  CRITICAL  9.1    0.31.0           golang.org/x/crypto
+       2024-12-17  https://github.com/NHAS/CVE-2024-45337-POC
+📆 registry.k8s.io/kube-proxy:v1.27.6 >>> created: 2023-09-13. Last update: 2025-02-05
+💡 registry.k8s.io/kube-proxy:v1.27.6 >>> use a newer tags:
+   v1.27.7          v1.27.8          v1.27.9          v1.27.10         v1.27.11
+   v1.27.12         v1.27.13         v1.27.14         v1.27.15         v1.27.16
+   v1.28.0          v1.28.0-alpha.0  v1.28.0-alpha.1  v1.28.0-alpha.2  v1.28.0-alpha.3
+   v1.28.0-alpha.4  v1.28.0-beta.0   v1.28.0-rc.0     v1.28.0-rc.1     v1.28.1
+   v1.28.2          v1.28.3          v1.28.4          v1.28.5          v1.28.6
+   v1.28.7          v1.28.8          v1.28.9          v1.28.10         v1.28.11
+   v1.28.12         v1.28.13         v1.28.14         v1.28.15         v1.29.0
+   v1.29.0-alpha.0  v1.29.0-alpha.1  v1.29.0-alpha.2  v1.29.0-alpha.3  v1.29.0-rc.0
+   v1.29.0-rc.1     v1.29.0-rc.2     v1.29.1          v1.29.2          v1.29.3
+   v1.29.4          v1.29.5          v1.29.6          v1.29.7          v1.29.8
+   v1.29.9          v1.29.10         v1.29.11         v1.29.12         v1.29.13
+   v1.30.0          v1.30.0-alpha.0  v1.30.0-alpha.1  v1.30.0-alpha.2  v1.30.0-alpha.3
+   v1.30.0-beta.0   v1.30.0-rc.0     v1.30.0-rc.1     v1.30.0-rc.2     v1.30.1
+   v1.30.2          v1.30.3          v1.30.4          v1.30.5          v1.30.6
+   v1.30.7          v1.30.8          v1.30.9          v1.31.0          v1.31.0-alpha.0
+   v1.31.0-alpha.1  v1.31.0-alpha.2  v1.31.0-alpha.3  v1.31.0-beta.0   v1.31.0-rc.0
+   v1.31.0-rc.1     v1.31.1          v1.31.2          v1.31.3          v1.31.4
+   v1.31.5          v1.32.0          v1.32.0-alpha.0  v1.32.0-alpha.1  v1.32.0-alpha.2
+   v1.32.0-alpha.3  v1.32.0-beta.0   v1.32.0-rc.0     v1.32.0-rc.1     v1.32.0-rc.2
+   v1.32.1          v1.33.0-alpha.0  v1.33.0-alpha.1
 ```
 ```bash
 # dangerous image build misconfiguration cve-2024-21626

@@ -23,6 +23,8 @@ IGNORE_ERRORS=false
 IMAGE_LINK=''
 IS_ERROR=false
 
+EMOJI_EXPLOITATION='\U1F480' # SKULL
+
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 # check debug mode to debug child scripts and external tools
@@ -33,6 +35,7 @@ fi
 
 INPUT_FILE=$SCRIPTPATH'/scan-trivy.cve'
 JSON_FILE=$SCRIPTPATH'/scan-inthewild-io.json'
+DB_FILE=$SCRIPTPATH'/inthewild.db'
 RES_FILE=$SCRIPTPATH'/scan-inthewild-io.result'
 ERROR_FILE=$SCRIPTPATH'/scan-inthewild-io.error'
 eval "rm -f $RES_FILE $ERROR_FILE"
@@ -89,8 +92,25 @@ get_cve_info()
 {
     EXPL='false'
     if  [ "$IS_ERROR" = false ]; then
-        if grep -q $1 $JSON_FILE; then
-            EXPL='true'
+        mapfile -t EXPLOITS < <(sqlite3 -column "$DB_FILE" "SELECT type,timeStamp,referenceURL FROM exploits WHERE id = '$1';")
+        if [[ ${#EXPLOITS[@]} -gt 0 ]]; then
+            EXPL=true
+            rm -rf "$1.expl"
+            for ((ii=0; ii<${#EXPLOITS[@]}; ii+=1)); do
+                TYPE=$(echo "${EXPLOITS[$ii]}" | awk '{print $1}')
+                EXPLOITS[$ii]=$(echo "${EXPLOITS[$ii]}" | sed -E 's/^[^ ]+ +//')
+                IS_EXPLOITATION=false
+                if [[ "$TYPE" == "exploitation" ]]; then
+                    IS_EXPLOITATION=true
+                fi
+                EXPLOITS[$ii]="${EXPLOITS[$ii]:0:10}${EXPLOITS[$ii]:24}"
+                if [ "$IS_EXPLOITATION" == "true" ]; then
+                    EXPLOITS[$ii]="    $EMOJI_EXPLOITATION ${EXPLOITS[$ii]}"
+                else
+                    EXPLOITS[$ii]="       ${EXPLOITS[$ii]}"
+                fi
+                echo "${EXPLOITS[$ii]}" >> "$1.expl"
+            done
         fi
     fi
     
@@ -101,26 +121,25 @@ get_cve_info()
     echo "$EXPL" >> $RES_FILE
 }
 
-echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> check  $JSON_FILE\033[0K\r"
+echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> check  $DB_FILE\033[0K\r"
 IS_CACHED=false
-if [ -f "$JSON_FILE" ]; then
+if [ -f "$DB_FILE" ]; then
     # check date modification
-    if [ $(($(date +%s) - $(stat -c %Y "$JSON_FILE"))) -le 3600 ]; then
+    if [ $(($(date +%s) - $(stat -c %Y "$DB_FILE"))) -le 3600 ]; then
         IS_CACHED=true
     fi
 fi
 
 if  [ "$IS_CACHED" = false ]; then
-    echo -ne $(date +"%H:%M:%S") "  $IMAGE_LINK >>> check inthewild.io\033[0K\r"
-    rm -f $JSON_FILE
-    curl $DEBUG_CURL --compressed -L https://inthewild.io/api/exploited \
-            -o $JSON_FILE \
-            -H 'Content-Type: application/json' \
-            || error_exit "error inthewild.io: please check internet connection and retry"
+    echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> check inthewild\033[0K\r"
+    rm -f $DB_FILE
+    curl $DEBUG_CURL -L https://pub-4c1eae2a180542b19ea7c88f1e4ccf07.r2.dev/inthewild.db \
+            -o $DB_FILE \
+            || error_exit "error r2.dev: please check internet connection and retry"
 
-    # check json
-    if [ ! -f $JSON_FILE ]; then
-        error_exit "$JSON_FILE not found"
+    # check db
+    if [ ! -f $DB_FILE ]; then
+        error_exit "$DB_FILE not found"
     fi
 fi
 

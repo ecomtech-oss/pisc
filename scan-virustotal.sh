@@ -459,11 +459,9 @@ unpack() {
     # Also exclude dev/* because nonroot will cause a device creation error
     eval tar --ignore-failed-read --one-file-system --no-same-owner --no-same-permissions --mode=+w --exclude dev/* -xf "$1" -C "$IMAGE_DIR/0" $DEBUG_TAR
     # if directories after extraction lack the "w" attribute, deletion will result in a "Permission denied" error.
-    # Therefore, we add the "w" attribute to the directories
-    find "$IMAGE_DIR/0" -type d -exec chmod +w {} + >/dev/null 2>&1
-    LIST_TAR_FILES=()
-    # sometimes "permission denied" was here
-    LIST_TAR_FILES=(`find $IMAGE_DIR/0 -type f`)
+    # Therefore, we add the "rwx" attribute to the directories
+    find "$IMAGE_DIR/0" -type d -exec chmod u+rwx {} + 2>/dev/null
+    LIST_TAR_FILES=(`find "$IMAGE_DIR/0" -type f 2>/dev/null`)
     # "find" dont sort files by name, so we need sorting
     # Otherwise, we will get different tar and sha256 results. 
     # As a result, the hashes on different devices will not match 

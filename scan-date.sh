@@ -55,6 +55,7 @@ debug_null() {
     fi    
 }
 
+IMAGE_DIR=$SCRIPTPATH'/image'
 JSON_FILE=$SCRIPTPATH'/inspect.json'
 RES_FILE=$SCRIPTPATH'/scan-date.result'
 rm -f $RES_FILE
@@ -130,28 +131,26 @@ echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> extended check date\033[0K\r"
 CREATED_DATE_EXT=0
 
 # Go through layers-archives for extended date searching
-for f in "$SCRIPTPATH/image"/*.tar
+for f in "$IMAGE_DIR"/*.tar
 do
     # Unpack the layer into a folder
     # Sometimes rm and tar occurs an error
     # Therefore disable error checking
     set +Eeo pipefail
-    `rm -rf "$SCRIPTPATH/image/0"` debug_null
-    `mkdir "$SCRIPTPATH/image/0"` debug_null
+    `rm -rf "$IMAGE_DIR/0"` debug_null
+    `mkdir "$IMAGE_DIR/0"` debug_null
     # if you run tar embedded in alpine (OCI-image based on alpine)
     # then there is a tar of a different version (busybox) and occurs errors when unpacking
     # unreadable files, (in this place unreadable files may occur)
     # which causes the script to stop.
     # Therefore it is necessary to additionally install GNU-tar in the alpine-OCI-image
     # Also exclude dev/* because nonroot will cause a device creation error
-    eval tar --ignore-failed-read --one-file-system --no-same-owner --no-same-permissions --mode=+w --exclude dev/* -xf "$f" -C "$SCRIPTPATH/image/0" $DEBUG_TAR
+    eval tar --ignore-failed-read --one-file-system --no-same-owner --no-same-permissions --mode=+w --exclude dev/* -xf "$f" -C "$IMAGE_DIR/0" $DEBUG_TAR
     # if directories after extraction lack the "w" attribute, deletion will result in a "Permission denied" error.
-    # Therefore, we add the "w" attribute to the directories
-    find "$SCRIPTPATH/image/0" -type d -exec chmod +w {} + >/dev/null 2>&1
+    # Therefore, we add the "rwx" attribute to the directories
+    find "$IMAGE_DIR/0" -type d -exec chmod u+rwx {} + 2>/dev/null
     # Check if there is at least one application or x-shellscript in current layer
-    LIST_TAR_FILES=()
-    # sometimes "permission denied" was here
-    LIST_TAR_FILES=(`find image/0 -type f`)
+    LIST_TAR_FILES=(`find "$IMAGE_DIR/0" -type f 2>/dev/null`)
     # Turning error checking back on
     set -Eeo pipefail
 

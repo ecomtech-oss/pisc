@@ -5,7 +5,7 @@
 set -Eeo pipefail
 
 version() {
-    echo v0.16.0
+    echo v0.17.0
 }
 
 usage() {
@@ -24,36 +24,37 @@ Author: @kapistka, 2025
           |||||\______/
 
 A command-line tool to assess the security of OCI container images.  
-Exits with code `1` if any of the following conditions are met:  
+Exits with code '1' if any of the following conditions are met:  
   - The image contains malware.  
   - The image has exploitable vulnerabilities.  
   - The image has dangerous build misconfigurations.  
   - The image is older than a specified number of days.  
-  - The image uses a non-versioned tag (e.g., `:latest`).  
+  - The image uses a non-versioned tag (e.g., ':latest').  
 
 Usage:
   $(basename "${BASH_SOURCE[0]}") [flags] [-i IMAGE | -f FILE | --tar TARFILE]  
 
 Flags:
   -d, --date                      Check old build date (default: 365 days).
-  --d-days <int>                  Specify the number of days for build date check. Example: `--d-days 180`.
+  --d-days <int>                  Specify the number of days for build date check. Example: '--d-days 180'.
   -e, --exploits                  Check for exploitable vulnerabilities using Trivy and inthewild.io.
-  -f, --file <string>             Check all images listed in a file. Example: `-f images.txt`.
+  -f, --file <string>             Check all images listed in a file. Example: '-f images.txt'.
   -h, --help                      Display this help message.
   --ignore-errors                 Ignore errors from external tools and continue execution.
-  -i, --image <string>            Check a specific image. Example: `-i r0binak/mtkpi:v1.4`.
-  -l, --latest                    Check for usage of non-versioned tags (e.g., `:latest`).
+  -i, --image <string>            Check a specific image. Example: '-i r0binak/mtkpi:v1.4'.
+  -l, --latest                    Check for usage of non-versioned tags (e.g., ':latest').
   -m, --misconfig                 Check for dangerous image misconfigurations.
   --tar <string>                  Check a local TAR file containing image layers.
-                                  Example: `--tar /path/to/private-image.tar`.
+                                  Example: '--tar /path/to/private-image.tar'.
+  --severity                      severities of vulnerabilities (UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL). Default [HIGH,CRITICAL].
   --trivy-server <string>         Specify a Trivy-server URL for vulnerability scanning.  
-                                  Example: `--trivy-server http://trivy.something.io:8080`. 
-  --trivy-token <string>          Provide a Trivy-server API token. Example: `--trivy-token 0123456789abZ`.
+                                  Example: '--trivy-server http://trivy.something.io:8080'. 
+  --trivy-token <string>          Provide a Trivy-server API token. Example: '--trivy-token 0123456789abZ'.
   -v, --version                   Display version.
   --virustotal-key <string        Use VirusTotal API to scan for malware.
-                                  Example: `--virustotal-key 0123456789abcdef`.
+                                  Example: '--virustotal-key 0123456789abcdef'.
   --vulners-key <string>          Use Vulners.com API instead of inthewild.io for vulnerability scanning.  
-                                  Example: `--vulners-key 0123456789ABCDXYZ`.
+                                  Example: '--vulners-key 0123456789ABCDXYZ'.
 
 Examples:
   ./scan.sh --virustotal-key 0123456789abcdef -i r0binak/mtkpi:v1.3
@@ -61,8 +62,8 @@ Examples:
   ./scan.sh -delm --trivy-server http://trivy.something.io:8080 --trivy-token 0123abZ --virustotal-key 0123456789abcdef -f images.txt
 
 Additional Notes:
-- To authenticate with a registry, refer to `scan-download-unpack.sh#L14`.  
-- To configure exclusions for specific CVEs or other criteria, see `check-exclusion.sh#L5`.
+- To authenticate with a registry, refer to 'scan-download-unpack.sh#L14'.  
+- To configure exclusions for specific CVEs or other criteria, see 'check-exclusion.sh#L5'.
 EOF
 }
 
@@ -77,6 +78,7 @@ IMAGE_LINK=''
 LOCAL_FILE=''
 OLD_BUILD_DAYS=365
 SCAN_RETURN_CODE=0
+SEVERITY='HIGH,CRITICAL'
 TRIVY_SERVER=''
 TRIVY_TOKEN=''
 VIRUSTOTAL_API_KEY=''
@@ -96,7 +98,7 @@ EMOJI_NOT_OK='\U1F648' # see-no-evil monkey
 EMOJI_LATEST='\U2693'  # anchor
 EMOJI_OLD='\U1F4C6'    # tear-off calendar
 EMOJI_TAR='\U1F4E6'    # package
-EMOJI_LIST='\U1F5D2'   # spiral notepad
+EMOJI_LIST='\U1F4C3'   # page with curl
 EMOJI_DOCKER='\U1F433' # whale
 
 U_LINE2='\U02550\U02550\U02550\U02550\U02550\U02550\U02550\U02550'
@@ -106,7 +108,7 @@ U_LINE=$U_LINE2$U_LINE2$U_LINE2$U_LINE2$U_LINE2$U_LINE2
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 # remove exclusions cache csv
 EXCLUSIONS_FILE=$SCRIPTPATH'/whitelist.yaml'
-eval "rm -f $EXCLUSIONS_FILE.csv"
+eval "rm -f $EXCLUSIONS_FILE.csv *.expl"
 
 # check debug mode to debug child scripts and external tools
 DEBUG=''
@@ -126,7 +128,7 @@ debug_set() {
 
 # read the options
 debug_set false
-ARGS=$(getopt -o dehf:i:lmv --long date,exploits,d-days:,help,file:,ignore-errors,image:,latest,misconfig,tar:,trivy-server:,trivy-token:,version,virustotal-key:,vulners-key: -n $0 -- "$@")
+ARGS=$(getopt -o dehf:i:lmv --long date,exploits,d-days:,help,file:,ignore-errors,image:,latest,misconfig,severity:,tar:,trivy-server:,trivy-token:,version,virustotal-key:,vulners-key: -n $0 -- "$@")
 eval set -- "$ARGS"
 debug_set true
 
@@ -173,6 +175,11 @@ while true ; do
             case "$2" in
                 "") shift 1 ;;
                 *) CHECK_MISCONFIG=true ; shift 1 ;;
+            esac ;;
+        --severity)
+            case "$2" in
+                "") shift 2 ;;
+                *) SEVERITY=$2 ; shift 2 ;;
             esac ;; 
         --tar)
             case "$2" in
@@ -256,7 +263,7 @@ debug_set true
 # check tools exist
 IS_TOOLS_NOT_EXIST=false
 TOOLS_NOT_EXIST_STR=''
-LIST_TOOLS=(column curl file find jq sha256sum skopeo tar tr trivy yq)
+LIST_TOOLS=(column curl file find jq sha256sum skopeo sqlite3 tar tr trivy yq)
 for (( i=0; i<${#LIST_TOOLS[@]}; i++ ));
 do
     if ! command -v ${LIST_TOOLS[$i]} &> /dev/null
@@ -390,7 +397,7 @@ scan_image() {
         if [ ! -z "$TRIVY_SERVER" ]; then
             PARAMS=$PARAMS" --trivy-server $TRIVY_SERVER --trivy-token $TRIVY_TOKEN"
         fi
-        /bin/bash $DEBUG$SCRIPTPATH/scan-trivy.sh --dont-output-result $FLAG_IMAGE $IMAGE_LINK $PARAMS $IGNORE_ERRORS_FLAG
+        /bin/bash $DEBUG$SCRIPTPATH/scan-trivy.sh --severity $SEVERITY --dont-output-result $FLAG_IMAGE $IMAGE_LINK $PARAMS $IGNORE_ERRORS_FLAG
         debug_set true
         TRIVY_RESULT_MESSAGE=$(<$SCRIPTPATH/scan-trivy.result)
         if [ "$TRIVY_RESULT_MESSAGE" != "OK" ] && [ "$TRIVY_RESULT_MESSAGE" != "OK (whitelisted)" ] ; then
