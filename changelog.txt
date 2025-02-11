@@ -1,3 +1,7 @@
+v0.17.1
+Fixed
+    Issue with exploit displaying in CI-output.
+
 v0.17.0
 Added
     Extended exploit database is now used.

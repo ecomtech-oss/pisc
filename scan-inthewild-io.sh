@@ -95,7 +95,7 @@ get_cve_info()
         mapfile -t EXPLOITS < <(sqlite3 -column "$DB_FILE" "SELECT type,timeStamp,referenceURL FROM exploits WHERE id = '$1';")
         if [[ ${#EXPLOITS[@]} -gt 0 ]]; then
             EXPL=true
-            rm -rf "$1.expl"
+            rm -rf "$SCRIPTPATH/$1.expl"
             for ((ii=0; ii<${#EXPLOITS[@]}; ii+=1)); do
                 TYPE=$(echo "${EXPLOITS[$ii]}" | awk '{print $1}')
                 EXPLOITS[$ii]=$(echo "${EXPLOITS[$ii]}" | sed -E 's/^[^ ]+ +//')
@@ -109,7 +109,7 @@ get_cve_info()
                 else
                     EXPLOITS[$ii]="       ${EXPLOITS[$ii]}"
                 fi
-                echo "${EXPLOITS[$ii]}" >> "$1.expl"
+                echo "${EXPLOITS[$ii]}" >> "$SCRIPTPATH/$1.expl"
             done
         fi
     fi
