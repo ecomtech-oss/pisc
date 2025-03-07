@@ -250,7 +250,8 @@ hash_search() {
         
         # get vendors detected malware
         VENDORS=()
-        VENDORS+=(`jq -r '.data[]?.attributes?.last_analysis_results?[]? | (select(.category == "malicious")) | .engine_name' $JSON_SEARCH_FILE`)
+        VENDORS+=(`jq -r '.data[]?.attributes?.last_analysis_results?[]? | (select(.category == "malicious")) | .engine_name' $JSON_SEARCH_FILE`) \
+            || error_exit "error virustotal.com: please check api-key"
         false_positive_vendors_remove
         # if vendors count (after false positive vendors remove) > 0 then result is bad
         if [ ${#VENDORS[@]} -gt 0 ] ; then  
@@ -279,7 +280,7 @@ analysis_search() {
     if [ "$ANALYSIS_STATUS" == "completed" ]; then 
         # get vendors detected malware
         VENDORS=()
-        VENDORS+=(`jq -r '.data?.attributes?.results?[]? | (select(.category == "malicious")) | .engine_name' $JSON_SEARCH_FILE`)
+        VENDORS+=(`jq -r '.data?.attributes?.results?[]? | (select(.category == "malicious")) | .engine_name' $JSON_SEARCH_FILE`) || error_exit "error virustotal.com: please check api-key"
         false_positive_vendors_remove
         # if vendors count (after false positive vendors remove) > 0 then result is bad
         if [ ${#VENDORS[@]} -gt 0 ] ; then  
@@ -311,31 +312,31 @@ relationship_search() {
     debug_set true    
     REL_STAT=()
     REL_PATH=()
-    REL_PATH+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .context_attributes?.filename?' $JSON_RELATIONSHIP_FILE`)
+    REL_PATH+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .context_attributes?.filename?' $JSON_RELATIONSHIP_FILE`) || error_exit "error virustotal.com: please check api-key"
     REL_ID=()
-    REL_ID+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .id' $JSON_RELATIONSHIP_FILE`)
+    REL_ID+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .id' $JSON_RELATIONSHIP_FILE`) || error_exit "error virustotal.com: please check api-key"
     REL_LABEL=()
-    REL_LABEL+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.popular_threat_classification?.suggested_threat_label?' $JSON_RELATIONSHIP_FILE`)
+    REL_LABEL+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.popular_threat_classification?.suggested_threat_label?' $JSON_RELATIONSHIP_FILE`) || error_exit "error virustotal.com: please check api-key"
     REL_MALICIOUS=()  
-    REL_MALICIOUS+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.last_analysis_stats?.malicious?' $JSON_RELATIONSHIP_FILE`)  
+    REL_MALICIOUS+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.last_analysis_stats?.malicious?' $JSON_RELATIONSHIP_FILE`) || error_exit "error virustotal.com: please check api-key"
     REL_SUSPICIOUS=()  
-    REL_SUSPICIOUS+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.last_analysis_stats?.suspicious?' $JSON_RELATIONSHIP_FILE`)
+    REL_SUSPICIOUS+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.last_analysis_stats?.suspicious?' $JSON_RELATIONSHIP_FILE`) || error_exit "error virustotal.com: please check api-key"
     REL_UNDETECTED=()  
-    REL_UNDETECTED+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.last_analysis_stats?.undetected?' $JSON_RELATIONSHIP_FILE`)
+    REL_UNDETECTED+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.last_analysis_stats?.undetected?' $JSON_RELATIONSHIP_FILE`) || error_exit "error virustotal.com: please check api-key"
     REL_HARMLESS=()  
-    REL_HARMLESS+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.last_analysis_stats?.harmless?' $JSON_RELATIONSHIP_FILE`)
+    REL_HARMLESS+=(`jq -r '.data[]? | (select(.attributes?.last_analysis_stats?.malicious? != 0)) | .attributes?.last_analysis_stats?.harmless?' $JSON_RELATIONSHIP_FILE`) || error_exit "error virustotal.com: please check api-key"
     for (( ii=0; ii<${#REL_ID[@]}; ii++ ));
     do
         # get vendors detected malware
         VENDORS=()
-        VENDORS+=(`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.last_analysis_results?[]? | (select(.category == "malicious")) | .engine_name?' $JSON_RELATIONSHIP_FILE`)
+        VENDORS+=(`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.last_analysis_results?[]? | (select(.category == "malicious")) | .engine_name?' $JSON_RELATIONSHIP_FILE`) || error_exit "error virustotal.com: please check api-key"
         false_positive_vendors_remove
        
         # if vendors count (after false positive vendors remove) > 0 then result is bad
         if [ ${#VENDORS[@]} -gt 0 ] ; then  
             # get name if path empty
             if [ "${REL_PATH[$ii]}" == 'null' ]; then
-                REL_PATH[$ii]=`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.meaningful_name?' $JSON_RELATIONSHIP_FILE`
+                REL_PATH[$ii]=`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.meaningful_name?' $JSON_RELATIONSHIP_FILE` || error_exit "error virustotal.com: please check api-key"
             fi
             # if path very long then cut it
             if [ ${#REL_PATH[$ii]} -gt 70 ] ; then 
@@ -354,7 +355,7 @@ relationship_search() {
             if [ "${REL_LABEL[$ii]}" == 'null' ]; then
                 REL_LABEL[$ii]='?'
                 REL_MALWARE_NAME_LIST=()
-                REL_MALWARE_NAME_LIST+=(`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.last_analysis_results?[]? | (select(.category == "malicious")) | .result?' $JSON_RELATIONSHIP_FILE`)
+                REL_MALWARE_NAME_LIST+=(`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.last_analysis_results?[]? | (select(.category == "malicious")) | .result?' $JSON_RELATIONSHIP_FILE`) || error_exit "error virustotal.com: please check api-key"
                 # set the longest malware name for label =)
                 for (( jj=0; jj<${#REL_MALWARE_NAME_LIST[@]}; jj++ ));
                 do
@@ -365,7 +366,7 @@ relationship_search() {
             fi
 
             # check known_distributors - false positive
-            REL_KNOWN_DISTRIBUTORS=`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.known_distributors?.distributors?[]?' $JSON_RELATIONSHIP_FILE`
+            REL_KNOWN_DISTRIBUTORS=`jq -r '.data[]? | (select(.id == "'${REL_ID[$ii]}'")) | .attributes?.known_distributors?.distributors?[]?' $JSON_RELATIONSHIP_FILE` || error_exit "error virustotal.com: please check api-key"
             # malicious count must be less than 2
             if [[ ! -z "$REL_KNOWN_DISTRIBUTORS" ]] && [[  "${REL_MALICIOUS[$ii]}" -lt 2 ]]; then 
                 REL_LABEL[$ii]='file-distributed-by-'$REL_KNOWN_DISTRIBUTORS

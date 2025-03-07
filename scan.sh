@@ -5,7 +5,7 @@
 set -Eeo pipefail
 
 version() {
-    echo v0.17.1
+    echo v0.17.2
 }
 
 usage() {
@@ -342,9 +342,9 @@ scan_image() {
 
     # non-version tag checking (evolution of "latest")
     if [ "$CHECK_LATEST" = true ]; then
-        echo -ne $(date +"%H:%M:%S") "  $IMAGE_LINK >>> check non version tag\033[0K\r"
-        IMAGE_DIGEST=${IMAGE_LINK#*@}
-        if [[ $IMAGE_DIGEST != *"@"* ]]; then
+        echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> check non version tag\033[0K\r"
+        # exclude digest
+        if [[ $IMAGE_LINK != *"@"* ]]; then
             IMAGE_TAG=${IMAGE_LINK#*:}
             if [[ ! $IMAGE_TAG =~ [0-9]*[0-9]\.[0-9]*[0-9] ]]; then
                 # check exclusions

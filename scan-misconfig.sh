@@ -27,6 +27,8 @@ MISCONFIG_REGEX=(
     "/etc/*-release"
     "ln\S+\.json|\S+\.lock|ln\S+\.txt"
     "\supx\s"
+    "ln .*libnvidia"
+    "ln .*libdxcore.so"
 )
 MISCONFIG_MESSAGE=(
     "CVE-2024-21626 runC Escape"
@@ -36,6 +38,8 @@ MISCONFIG_MESSAGE=(
     "malicious-compliance - attempt to avoid OS detection"
     "malicious-compliance - hide language dependency files"
     "malicious-compliance - UPX detected"
+    "CVE-2024-0132 nvidia container toolkit escape"
+    "CVE-2024-0132 nvidia container toolkit escape"
 )
 MISCONFIG_URL=(
     "https://nitroc.org/en/posts/cve-2024-21626-illustrated/"
@@ -45,6 +49,8 @@ MISCONFIG_URL=(
     "https://github.com/bgeesaman/malicious-compliance/blob/main/docker/Dockerfile-1-os"
     "https://github.com/bgeesaman/malicious-compliance/blob/main/docker/Dockerfile-3-lang"
     "https://github.com/bgeesaman/malicious-compliance/blob/main/docker/Dockerfile-4-bin"
+    "https://github.com/ctrsploit/ctrsploit/tree/public/vul/cve-2024-0132"
+    "https://github.com/r0binak/CVE-2024-0132"
 )
 
 # var init

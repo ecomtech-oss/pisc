@@ -1,4 +1,4 @@
-FROM aquasec/trivy:0.58.2 AS trivy
+FROM aquasec/trivy:0.59.1 AS trivy
 
 FROM alpine:3
 RUN apk update && apk upgrade && apk --no-cache add bash coreutils curl jq yq util-linux skopeo file tar sqlite
