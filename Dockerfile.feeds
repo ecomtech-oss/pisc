@@ -1,0 +1,24 @@
+FROM kapistka/pisc:v0.18.0
+
+ENV GRYPE_DB_CACHE_DIR=/home/nonroot/.cache/grype \
+    GRYPE_DB_AUTO_UPDATE=false \
+    TRIVY_CACHE_DIR=/home/nonroot/.cache/trivy
+
+WORKDIR /home/nonroot
+
+RUN curl -sSL "https://pub-4c1eae2a180542b19ea7c88f1e4ccf07.r2.dev/inthewild.db" -o /home/nonroot/inthewild.db
+
+RUN TODAY=$(date -u +%F) \
+  && YESTERDAY=$(date -u -d "-1 day" +%F) \
+  && if curl -sSL --fail "https://epss.empiricalsecurity.com/epss_scores-${TODAY}.csv.gz" -o /home/nonroot/epss.csv.gz; then \
+       echo "Downloaded EPSS for ${TODAY}"; \
+     else \
+       curl -sSL --fail "https://epss.empiricalsecurity.com/epss_scores-${YESTERDAY}.csv.gz" -o /home/nonroot/epss.csv.gz && \
+       echo "Downloaded EPSS for ${YESTERDAY}"; \
+     fi \
+  && zcat /home/nonroot/epss.csv.gz > /home/nonroot/epss.csv \
+  && rm /home/nonroot/epss.csv.gz
+
+RUN mkdir -p ${GRYPE_DB_CACHE_DIR} ${TRIVY_CACHE_DIR} \
+    && grype db update \
+    && trivy --cache-dir ${TRIVY_CACHE_DIR} image --download-db-only

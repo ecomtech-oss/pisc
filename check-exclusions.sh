@@ -115,7 +115,7 @@ declare -a VALUE_LIST
 declare -a IMAGE_LIST
 
 # csv cached and removed from parent script
-if [ ! -f $EXCLUSIONS_FILE'.csv' ]; then
+if [ ! -s $EXCLUSIONS_FILE'.csv' ]; then
     IMAGE_LIST=()
     KEY_LIST=()
     VALUE_LIST=()

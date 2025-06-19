@@ -3,16 +3,14 @@
 # Author: @kapistka, 2025
 
 # Usage
-#     ./scan-trivy.sh [-i image_link | --tar /path/to/private-image.tar]
+#     ./scan-grype.sh [-i image_link | --tar /path/to/private-image.tar]
 # Available options:
 #     --ignore-errors                   ignore errors (instead, write to $ERROR_FILE)
 #     -i, --image string                only this image will be checked. Example: -i kapistka/log4shell:0.0.3-nonroot
 #     --offline-feeds                   use a self-contained offline image with pre-downloaded vulnerability feeds (e.g., :latest-feeds)
 #     --tar string                      check local image-tar. Example: --tar /path/to/private-image.tar
-#     --trivy-server string             use trivy server if you can. Specify trivy URL, example: --trivy-server http://trivy.something.io:8080
-#     --trivy-token string              use trivy server if you can. Specify trivy token, example: --trivy-token 0123456789abZ
 # Example
-#     ./scan-trivy.sh -i kapistka/log4shell:0.0.3-nonroot
+#     ./scan-grype.sh -i kapistka/log4shell:0.0.3-nonroot
 
 
 set -Eeo pipefail
@@ -21,19 +19,17 @@ set -Eeo pipefail
 IGNORE_ERRORS=false
 IMAGE_LINK=''
 IS_ERROR=false
+OFFLINE_FEEDS=false
 RESULT_MESSAGE=''
-OFFLINE_FEEDS_FLAG=''
-TRIVY_SERVER=''
-TRIVY_TOKEN=''
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 # check debug mode to debug child scripts
 DEBUG=''
-DEBUG_TRIVY='2>/dev/null'
+DEBUG_GRYPE='-q'
 if [[ "$-" == *x* ]]; then
     DEBUG='-x '
-    DEBUG_TRIVY='--debug'
+    DEBUG_GRYPE='-vv'
 fi
 # turn on/off debugging for hide sensetive data
 debug_set() {
@@ -48,14 +44,14 @@ debug_set() {
 
 # default tar path
 INPUT_FILE=$SCRIPTPATH/image.tar
-# trivy output
-CSV_FILE=$SCRIPTPATH'/scan-trivy.csv'
+# grype output
+CSV_FILE=$SCRIPTPATH'/scan-grype.csv'
 # result this script for main output
-RES_FILE=$SCRIPTPATH'/scan-trivy.result'
+RES_FILE=$SCRIPTPATH'/scan-grype.result'
 # error file
-ERROR_FILE=$SCRIPTPATH'/scan-trivy.error'
+ERROR_FILE=$SCRIPTPATH'/scan-grype.error'
 # template file
-TMPL_FILE=$SCRIPTPATH'/trivy.tmpl'
+TMPL_FILE=$SCRIPTPATH'/grype.tmpl'
 eval "rm -f $CSV_FILE $RES_FILE $ERROR_FILE"
 touch $RES_FILE
 
@@ -76,7 +72,7 @@ error_exit()
 
 # read the options
 debug_set false
-ARGS=$(getopt -o i: --long ignore-errors,image:,offline-feeds,tar:,trivy-server:,trivy-token: -n $0 -- "$@")
+ARGS=$(getopt -o i: --long ignore-errors,image:,offline-feeds,tar: -n $0 -- "$@")
 eval set -- "$ARGS"
 debug_set true
 
@@ -87,7 +83,7 @@ while true ; do
             case "$2" in
                 "") shift 1 ;;
                 *) IGNORE_ERRORS=true ; shift 1 ;;
-            esac ;; 
+            esac ;;
         -i|--image)
             case "$2" in
                 "") shift 2 ;;
@@ -96,57 +92,38 @@ while true ; do
         --offline-feeds)
             case "$2" in
                 "") shift 1 ;;
-                *) OFFLINE_FEEDS_FLAG='--skip-db-update' ; shift 1 ;;
+                *) OFFLINE_FEEDS=true ; shift 1 ;;
             esac ;;
         --tar)
             case "$2" in
                 "") shift 2 ;;
                 *) INPUT_FILE=$2 ; shift 2 ;;
-            esac ;;    
-        --trivy-server)
-            case "$2" in
-                "") shift 2 ;;
-                *) TRIVY_SERVER=$2 ; shift 2 ;;
-            esac ;;  
-        --trivy-token)
-            case "$2" in
-                "") shift 2 ;;
-                *) debug_set false ; TRIVY_TOKEN=$2 ; debug_set true ; shift 2 ;;
             esac ;;
         --) shift ; break ;;
         *) echo "Wrong usage! Try '$0 --help' for more information." ; exit 2 ;;
     esac
 done
 
-echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan vulnerabilities by trivy\033[0K\r"
+echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan vulnerabilities by grype\033[0K\r"
 
-# use template
-
-# {{- range . }}
-# {{- range .Vulnerabilities }}
-# {{- $score := "" -}}
-# {{- range $key, $cvss := .CVSS }}
-# {{- if eq (printf "%s" $key) "nvd" }}
-# {{- $score = printf "%.1f" $cvss.V3Score }}
-# {{- end }}
-# {{- end }}
-# {{ .VulnerabilityID }}|{{ .Severity }}|{{ $score }}|{{ .FixedVersion }}|{{ .PkgName }}
-# {{- end }}
-# {{- end }}
-
-# if trivy-token is not specified, then use the local database (slow, if the script is in a OCI-image, the CI/CD speed suffers)
-debug_set false
-if [ -z "$TRIVY_TOKEN" ]; then
-    debug_set true
-    eval "trivy image --scanners vuln $OFFLINE_FEEDS_FLAG --format template --template @$TMPL_FILE -o $CSV_FILE --input $INPUT_FILE $DEBUG_TRIVY" || \
-    error_exit "error trivy client"
-# if trivy-token is specified, then we use the trivy-server
+# offline mode
+if [ "$OFFLINE_FEEDS" = true ] ; then
+    export GRYPE_DB_AUTO_UPDATE=false
 else
-    eval "trivy image --scanners vuln $OFFLINE_FEEDS_FLAG --format template --template @$TMPL_FILE -o $CSV_FILE --input $INPUT_FILE --server $TRIVY_SERVER --token $TRIVY_TOKEN --timeout 15m $DEBUG_TRIVY" || \
-    eval "trivy image --scanners vuln $OFFLINE_FEEDS_FLAG --format template --template @$TMPL_FILE -o $CSV_FILE --input $INPUT_FILE $DEBUG_TRIVY" || \
-    error_exit "error trivy server/client"
-fi
-debug_set true
+    export GRYPE_DB_AUTO_UPDATE=true
+fi 
+
+# use one-string template
+
+# {{- range .Matches }}{{- $cvss := .Vulnerability.Cvss }}
+# {{- if gt (len $cvss) 0 }}{{- $first := index $cvss 0 }}
+# {{- $score := printf "%.1f" $first.Metrics.BaseScore }}
+# {{ .Vulnerability.ID }}|{{ .Vulnerability.Severity }}|
+# {{ $score }}|{{ .Vulnerability.Fix.State }}|{{ .Artifact.Name }}
+# {{ else }}{{ .Vulnerability.ID }}|{{ .Vulnerability.Severity }}||
+# {{ .Vulnerability.Fix.State }}|{{ .Artifact.Name }}{{ end }}{{ "\n" -}}{{- end }}
+grype file:$INPUT_FILE --by-cve -o template -t $TMPL_FILE $DEBUG_GRYPE > $CSV_FILE \
+    || error_exit "error grype"
 
 # get values
 LIST_CVE=()
@@ -160,8 +137,6 @@ while IFS='|' read -r cve severity score fix package; do
         LIST_SEVERITY+=("$severity")
         LIST_SCORE+=("$score")
         LIST_FIXED+=("$fix")
-        # remove windows line-ending
-        package=${package//$'\r'/}
         LIST_PKG+=("$package")
     fi
 done < "$CSV_FILE"
@@ -170,10 +145,21 @@ LIST_length=${#LIST_CVE[@]}
 # normalize and print values
 for (( i=0; i<$LIST_length; i++ ));
 do
-    if [ "${LIST_FIXED[$i]}" = "" ]; then
-        LIST_FIXED[$i]='-'
+    if [ "${LIST_SEVERITY[$i]}" = "Critical" ]; then
+        LIST_SEVERITY[$i]='CRITICAL'
+    elif [ "${LIST_SEVERITY[$i]}" = "High" ]; then
+        LIST_SEVERITY[$i]='HIGH'
+    elif [ "${LIST_SEVERITY[$i]}" = "Medium" ]; then
+        LIST_SEVERITY[$i]='MEDIUM'
+    elif [ "${LIST_SEVERITY[$i]}" = "Low" ] || [ "${LIST_SEVERITY[$i]}" = "Negligible" ]; then
+        LIST_SEVERITY[$i]='LOW'
     else
+        LIST_SEVERITY[$i]='UNKNOWN'
+    fi
+    if [ "${LIST_FIXED[$i]}" = "fixed" ]; then
         LIST_FIXED[$i]='+'
+    else
+        LIST_FIXED[$i]='-'
     fi
     if [ "${LIST_SCORE[$i]}" = "" ]; then
         LIST_SCORE[$i]='-'

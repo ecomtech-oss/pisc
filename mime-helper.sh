@@ -18,7 +18,7 @@ set -Eeo pipefail
 error_exit()
 {
     echo "$1"
-    exit 1
+    exit 2
 }
 
 # var init

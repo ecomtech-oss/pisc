@@ -3,7 +3,7 @@
 # Author: @kapistka, 2025
 
 # Usage
-#     ./scan-inthewild-io.sh [--cve cve_id] [--dont-output-result] [-i image_link]
+#     ./scan-epss.sh [--cve cve_id] [--dont-output-result] [-i image_link]
 # Available options:
 #     --cve string                      specify single cve else script trying to read scan-vulnerabilities.cve 
 #     --dont-output-result              don't output result into console, only into file
@@ -11,8 +11,8 @@
 #     --ignore-errors                   ignore inthewild errors (instead, write to $ERROR_FILE)
 #     --offline-feeds                   use a self-contained offline image with pre-downloaded vulnerability feeds (e.g., :latest-feeds)
 # Example
-#     ./scan-inthewild-io.sh --cve CVE-2021-44228
-#     ./scan-inthewild-io.sh -i kapistka/log4shell:0.0.3-nonroot
+#     ./scan-epss.sh --cve CVE-2025-1974
+#     ./scan-epss.sh -i kapistka/log4shell:0.0.3-nonroot
 
 
 set -Eeo pipefail
@@ -20,11 +20,11 @@ set -Eeo pipefail
 # var init
 CVE=''
 DONT_OUTPUT_RESULT=false
-EMOJI_EXPLOITATION='\U1F480' # SKULL
 IGNORE_ERRORS=false
 IMAGE_LINK=''
 IS_ERROR=false
 OFFLINE_FEEDS=false
+URL_BASE='https://epss.empiricalsecurity.com'
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
@@ -35,10 +35,10 @@ if [[ "$-" == *x* ]]; then
 fi
 
 INPUT_FILE=$SCRIPTPATH'/scan-vulnerabilities.cve'
-JSON_FILE=$SCRIPTPATH'/scan-inthewild-io.json'
-DB_FILE=$SCRIPTPATH'/inthewild.db'
-RES_FILE=$SCRIPTPATH'/scan-inthewild-io.result'
-ERROR_FILE=$SCRIPTPATH'/scan-inthewild-io.error'
+DB_FILE=$SCRIPTPATH'/epss.csv'
+GZ_FILE=$SCRIPTPATH'/epss.csv.gz'
+RES_FILE=$SCRIPTPATH'/epss.result'
+ERROR_FILE=$SCRIPTPATH'/epss.error'
 eval "rm -f $RES_FILE $ERROR_FILE"
 touch $RES_FILE
 
@@ -94,42 +94,8 @@ while true ; do
     esac
 done
 
-get_cve_info()
-{
-    EXPL='false'
-    if  [ "$IS_ERROR" = false ]; then
-        mapfile -t EXPLOITS < <(sqlite3 -column "$DB_FILE" "SELECT type,timeStamp,referenceURL FROM exploits WHERE id = '$1';")
-        if [[ ${#EXPLOITS[@]} -gt 0 ]]; then
-            EXPL=true
-            rm -rf "$SCRIPTPATH/$1.expl"
-            for ((ii=0; ii<${#EXPLOITS[@]}; ii+=1)); do
-                TYPE=$(echo "${EXPLOITS[$ii]}" | awk '{print $1}')
-                EXPLOITS[$ii]=$(echo "${EXPLOITS[$ii]}" | sed -E 's/^[^ ]+ +//')
-                IS_EXPLOITATION=false
-                if [[ "$TYPE" == "exploitation" ]]; then
-                    IS_EXPLOITATION=true
-                fi
-                EXPLOITS[$ii]="${EXPLOITS[$ii]:0:10}${EXPLOITS[$ii]:24}"
-                if [ "$IS_EXPLOITATION" == "true" ]; then
-                    EXPLOITS[$ii]="    $EMOJI_EXPLOITATION ${EXPLOITS[$ii]}"
-                else
-                    EXPLOITS[$ii]="       ${EXPLOITS[$ii]}"
-                fi
-                echo "${EXPLOITS[$ii]}" >> "$SCRIPTPATH/$1.expl"
-            done
-        fi
-    fi
-    
-    # output result
-    if [ "$DONT_OUTPUT_RESULT" == "false" ]; then
-        echo "$1: EXPL=$EXPL"
-    fi    
-    echo "$EXPL" >> $RES_FILE
-}
-
-echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> read inthewild db\033[0K\r"
 IS_CACHED=false
-if [ -f "$DB_FILE" ]; then
+if [ -s "$DB_FILE" ]; then
     # check date modification
     if [ $(($(date +%s) - $(stat -c %Y "$DB_FILE"))) -le 90000 ]; then
         IS_CACHED=true
@@ -141,17 +107,47 @@ if [ -f "$DB_FILE" ]; then
 fi
 
 if  [ "$IS_CACHED" = false ]; then
-    echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> downloading inthewild db\033[0K\r"
     rm -f $DB_FILE
-    curl $DEBUG_CURL -L https://pub-4c1eae2a180542b19ea7c88f1e4ccf07.r2.dev/inthewild.db \
-            -o $DB_FILE \
-            || error_exit "error r2.dev: please check internet connection and retry"
-
+    IS_DOWNLOADED=false
+    for i in $(seq 0 9); do
+        d=$(date -d "-${i} day" +%F)
+        F="epss_scores-${d}.csv.gz"
+        URL="${URL_BASE}/${F}"
+        echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> downloading EPSS-${d} db\033[0K\r"
+        if curl -f $DEBUG_CURL -L "$URL" -o $GZ_FILE; then
+            IS_DOWNLOADED=true
+            break   
+        fi
+    done
+    if  [ "$IS_DOWNLOADED" = true ]; then
+        zcat "$GZ_FILE" > "$DB_FILE" || error_exit "error epss: bad file"
+    else
+        error_exit "error epss: please check internet connection and retry"
+    fi
     # check db
     if [ ! -f $DB_FILE ]; then
         error_exit "$DB_FILE not found"
     fi
 fi
+
+echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> read EPSS db\033[0K\r"
+
+# load EPSS
+declare -A EPSS_LIST
+while IFS=',' read -r cve epss _; do
+    EPSS_LIST["$cve"]="$epss"
+done < "$DB_FILE"
+
+# search cve in epss-db
+get_cve_info() {
+    local CVE="$1"
+    local EPSS="${EPSS_LIST[$CVE]:--}"
+    # output result
+    if [ "$DONT_OUTPUT_RESULT" == "false" ]; then
+        echo "$CVE: EPSS=$EPSS"
+    fi
+    echo "$EPSS" >> "$RES_FILE"
+}
 
 # single cve from argument
 if [ ! -z "$CVE" ]; then
@@ -159,10 +155,10 @@ if [ ! -z "$CVE" ]; then
 # cve list from INPUT_FILE
 else
     if [ -f $INPUT_FILE ]; then
-        LIST_CVE=(`awk '{print $1}' $INPUT_FILE`)
-        for (( i=0; i<${#LIST_CVE[@]}; i++ ));
+        LIST_EPSS=(`awk '{print $1}' $INPUT_FILE`)
+        for (( i=0; i<${#LIST_EPSS[@]}; i++ ));
         do
-           get_cve_info ${LIST_CVE[$i]}
+           get_cve_info ${LIST_EPSS[$i]}
         done
     else 
         error_exit "$INPUT_FILE not found"

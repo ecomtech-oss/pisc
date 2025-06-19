@@ -1,0 +1,11 @@
+{{- range . }}
+{{- range .Vulnerabilities }}
+{{- $score := "" -}}
+{{- range $key, $cvss := .CVSS }}
+{{- if eq (printf "%s" $key) "nvd" }}
+{{- $score = printf "%.1f" $cvss.V3Score }}
+{{- end }}
+{{- end }}
+{{ .VulnerabilityID }}|{{ .Severity }}|{{ $score }}|{{ .FixedVersion }}|{{ .PkgName }}
+{{- end }}
+{{- end }}

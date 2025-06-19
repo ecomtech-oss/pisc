@@ -1,3 +1,26 @@
+v0.18.0  
+Added  
+    Grype is now supported alongside Trivy.  
+        Results from Grype and Trivy are automatically merged, providing a more complete view of vulnerabilities.  
+        Use the --scanner [trivy|grype|all] flag to select the scanner(s) (default: all).  
+
+    Daily-updated image builds that include vulnerability databases (feeds) inside the container.  
+        Two Docker images:  
+            :latest — base image without feeds.  
+            :latest-feeds — image with embedded feeds for Trivy, Grype, EPSS, and exploit data.  
+        The --offline-feeds flag tells the tool not to download feeds when using a -feeds image.  
+
+    EPSS scoring support  
+        --epss-min parameter filters vulnerabilities based on EPSS score (default: 0.5).  
+        --epss-and parameter changes the filtering logic.  
+            By default (when the parameter is not set), vulnerabilities are selected using OR logic (EPSS ≥ threshold or known exploit).  
+            Enabling --epss-and applies stricter filtering (EPSS ≥ threshold and known exploit), useful when EPSS and exploit data are reliable and only the most critical vulnerabilities should be shown.  
+Changed  
+    Vulnerability information is now displayed in a more compact view.  
+    --show-exploits — exploit references are now shown only when using this flag.  
+    --severity-min — now specifies the minimum severity to filter, instead of listing all severities.  
+    Exit code for tool or execution errors changed from 1 to 2.  
+
 v0.17.2
 Added
     CVE-2024-0132 exploit detection

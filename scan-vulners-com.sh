@@ -5,7 +5,7 @@
 # Usage
 #     ./scan-vulners-com.sh [--cve cve_id] [--dont-output-result] [-i image_link] --vulners-key vulners_api_key
 # Available options:
-#     --cve string                      specify single cve or script trying to read scan-trivy.cve 
+#     --cve string                      specify single cve or script trying to read scan-vulnerabilities.cve 
 #     --dont-output-result              don't output result into console, only into file
 #     -i, --image string                only this image will be checked. Example: -i kapistka/log4shell:0.0.3-nonroot
 #     --ignore-errors                   ignore vulners errors (instead, write to $ERROR_FILE)
@@ -45,7 +45,7 @@ debug_set() {
     fi
 }
 
-INPUT_FILE=$SCRIPTPATH'/scan-trivy.cve'
+INPUT_FILE=$SCRIPTPATH'/scan-vulnerabilities.cve'
 JSON_FILE=$SCRIPTPATH'/scan-vulners-com.json'
 RES_FILE=$SCRIPTPATH'/scan-vulners-com.result'
 ERROR_FILE=$SCRIPTPATH'/scan-vulners-com.error'
@@ -62,7 +62,7 @@ error_exit()
             return 0
         else
             echo "  $IMAGE_LINK >>> $1                    "
-            exit 1
+            exit 2
         fi
     fi
 }

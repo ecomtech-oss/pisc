@@ -141,7 +141,7 @@ error_exit()
             return 0
         else
             echo "  $IMAGE_LINK >>> $1                    "
-            exit 1
+            exit 2
         fi
     fi
 }
@@ -791,6 +791,10 @@ if [ "$IS_OK" = false ] && [ "$DONT_ADV_SEARCH" = false ]; then
     do
         LIST_RESULT_PRINT[$i]=''
         if [ "${LIST_RESULT[$i]}" == "bad" ]; then 
+            SEARCH_RESULT_FIRST=()
+            SEARCH_RESULT_SECOND=()
+            SEARCH_RELATIONS_RESULT=()
+            
             relationship_search ${LIST_LAYERS_TO_ANALYSIS[$i]}
             # copy result to another array
             SEARCH_RESULT_FIRST=("${SEARCH_RELATIONS_RESULT[@]}") 
@@ -862,7 +866,7 @@ if [ "$IS_OK" = false ]; then
         if [ "${LIST_RESULT[$i]}" == "unknown" ]; then
             RESULT_MESSAGE=$RESULT_MESSAGE$'\n   layer '${LIST_LAYERS_TO_ANALYSIS[$i]:0:8}' is unknown for virustotal'
         fi
-    done                   
+    done
 fi
 
 # result: output to console and write to file
