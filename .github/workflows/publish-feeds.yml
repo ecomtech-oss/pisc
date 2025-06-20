@@ -1,0 +1,56 @@
+name: Build and Push feeds Docker image
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Fetch latest tag
+      id: get_tag
+      run: |
+        TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+        echo "RELEASE_TAG=$TAG" >> $GITHUB_OUTPUT
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USER }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build Docker image from Dockerfile.feeds
+      run: |
+        docker build --no-cache -f Dockerfile.feeds -t pisc-feeds:temp .
+
+    - name: Run tests
+      run: |
+        chmod +x ./test-image.sh
+        ./test-image.sh pisc-feeds:temp
+
+    - name: Tag and push Docker images
+      run: |
+        set -euo pipefail
+
+        USER=${{ secrets.DOCKERHUB_USER }}
+        TAG=${{ steps.get_tag.outputs.RELEASE_TAG }}
+
+        docker tag pisc-feeds:temp $USER/pisc:${TAG}-feeds
+        docker tag pisc-feeds:temp $USER/pisc:latest-feeds
+
+        echo "Pushing image: $USER/pisc:${TAG}-feeds"
+        docker push $USER/pisc:${TAG}-feeds
+
+        echo "Pushing image: $USER/pisc:latest-feeds"
+        docker push $USER/pisc:latest-feeds
