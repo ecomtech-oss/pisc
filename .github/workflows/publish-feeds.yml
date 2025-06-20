@@ -35,6 +35,8 @@ jobs:
         docker build --no-cache -f Dockerfile.feeds -t pisc-feeds:temp .
 
     - name: Run tests
+      env:
+        VT_API_KEY: ${{ secrets.VT_API_KEY }}
       run: |
         chmod +x ./test-image.sh
         ./test-image.sh pisc-feeds:temp
