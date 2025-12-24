@@ -1,4 +1,4 @@
-FROM kapistka/pisc:v0.18.0
+FROM ecomtechoss/pisc:v0.18.1
 
 ENV GRYPE_DB_CACHE_DIR=/home/nonroot/.cache/grype \
     GRYPE_DB_AUTO_UPDATE=false \

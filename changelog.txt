@@ -1,3 +1,8 @@
+v0.18.1
+Changed
+    Trivy 0.59.1
+    Grype 
+
 v0.18.0  
 Added  
     Grype is now supported alongside Trivy.  
