@@ -55,13 +55,13 @@ debug_null() {
     fi    
 }
 
-IMAGE_DIR=$SCRIPTPATH'/image'
-JSON_FILE=$SCRIPTPATH'/inspect.json'
-RES_FILE=$SCRIPTPATH'/scan-date.result'
+IMAGE_DIR=$OUT_DIR'/image'
+JSON_FILE=$OUT_DIR'/inspect.json'
+RES_FILE=$OUT_DIR'/scan-date.result'
 rm -f $RES_FILE
 
 SKOPEO_AUTH_FLAG=''
-AUTH_FILE=$SCRIPTPATH'/auth.json'
+AUTH_FILE=$OUT_DIR'/auth.json'
 if [ -f "$AUTH_FILE" ]; then
     SKOPEO_AUTH_FLAG="--authfile=$AUTH_FILE"
 fi

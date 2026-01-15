@@ -35,9 +35,9 @@ fi
 U_LINE2='\U02550\U02550\U02550\U02550\U02550\U02550\U02550\U02550'
 U_LINE=$U_LINE2$U_LINE2$U_LINE2$U_LINE2$U_LINE2
 
-IMAGE_DIR=$SCRIPTPATH'/image'
-TMP_FILE=$SCRIPTPATH'/virustotal.tmp'
-SORT_FILE=$SCRIPTPATH'/virustotal.sort'
+IMAGE_DIR=$OUT_DIR'/image'
+TMP_FILE=$OUT_DIR'/virustotal.tmp'
+SORT_FILE=$OUT_DIR'/virustotal.sort'
 
 # read the options
 ARGS=$(getopt -o i: --long image: -n $0 -- "$@")

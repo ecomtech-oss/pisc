@@ -34,11 +34,11 @@ if [[ "$-" == *x* ]]; then
     DEBUG_CURL='-v '
 fi
 
-INPUT_FILE=$SCRIPTPATH'/scan-vulnerabilities.cve'
-JSON_FILE=$SCRIPTPATH'/scan-inthewild-io.json'
-DB_FILE=$SCRIPTPATH'/inthewild.db'
-RES_FILE=$SCRIPTPATH'/scan-inthewild-io.result'
-ERROR_FILE=$SCRIPTPATH'/scan-inthewild-io.error'
+INPUT_FILE=$OUT_DIR'/scan-vulnerabilities.cve'
+JSON_FILE=$OUT_DIR'/scan-inthewild-io.json'
+DB_FILE=$OUT_DIR'/.cache/inthewild.db'
+RES_FILE=$OUT_DIR'/scan-inthewild-io.result'
+ERROR_FILE=$OUT_DIR'/scan-inthewild-io.error'
 eval "rm -f $RES_FILE $ERROR_FILE"
 touch $RES_FILE
 
@@ -101,7 +101,7 @@ get_cve_info()
         mapfile -t EXPLOITS < <(sqlite3 -column "$DB_FILE" "SELECT type,timeStamp,referenceURL FROM exploits WHERE id = '$1';")
         if [[ ${#EXPLOITS[@]} -gt 0 ]]; then
             EXPL=true
-            rm -rf "$SCRIPTPATH/$1.expl"
+            rm -rf "$OUT_DIR/$1.expl"
             for ((ii=0; ii<${#EXPLOITS[@]}; ii+=1)); do
                 TYPE=$(echo "${EXPLOITS[$ii]}" | awk '{print $1}')
                 EXPLOITS[$ii]=$(echo "${EXPLOITS[$ii]}" | sed -E 's/^[^ ]+ +//')
@@ -115,7 +115,7 @@ get_cve_info()
                 else
                     EXPLOITS[$ii]="       ${EXPLOITS[$ii]}"
                 fi
-                echo "${EXPLOITS[$ii]}" >> "$SCRIPTPATH/$1.expl"
+                echo "${EXPLOITS[$ii]}" >> "$OUT_DIR/$1.expl"
             done
         fi
     fi

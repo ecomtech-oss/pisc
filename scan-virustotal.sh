@@ -118,17 +118,17 @@ debug_null() {
 }
 
 
-IMAGE_DIR=$SCRIPTPATH'/image'
-ADVANCED_DIR=$SCRIPTPATH'/advanced'
+IMAGE_DIR=$OUT_DIR'/image'
+ADVANCED_DIR=$OUT_DIR'/advanced'
 
-JSON_RELATIONSHIP_FILE=$SCRIPTPATH'/virustotal-rel.json'
-JSON_SEARCH_FILE=$SCRIPTPATH'/virustotal.json'
-URL_FILE=$SCRIPTPATH'/virustotal-url.json'
-UPLOAD_JSON_FILE=$SCRIPTPATH'/virustotal-upload.json'
-RES_FILE=$SCRIPTPATH'/scan-virustotal.result'
-TMP_FILE=$SCRIPTPATH'/virustotal.tmp'
-SORT_FILE=$SCRIPTPATH'/virustotal.sort'
-ERROR_FILE=$SCRIPTPATH'/scan-virustotal.error'
+JSON_RELATIONSHIP_FILE=$OUT_DIR'/virustotal-rel.json'
+JSON_SEARCH_FILE=$OUT_DIR'/virustotal.json'
+URL_FILE=$OUT_DIR'/virustotal-url.json'
+UPLOAD_JSON_FILE=$OUT_DIR'/virustotal-upload.json'
+RES_FILE=$OUT_DIR'/scan-virustotal.result'
+TMP_FILE=$OUT_DIR'/virustotal.tmp'
+SORT_FILE=$OUT_DIR'/virustotal.sort'
+ERROR_FILE=$OUT_DIR'/scan-virustotal.error'
 eval "rm -f $RES_FILE $ERROR_FILE"
 
 # exception handling

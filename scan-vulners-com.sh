@@ -5,7 +5,7 @@
 # Usage
 #     ./scan-vulners-com.sh [--cve cve_id] [--dont-output-result] [-i image_link] --vulners-key vulners_api_key
 # Available options:
-#     --cve string                      specify single cve or script trying to read scan-vulnerabilities.cve 
+#     --cve string                      specify single cve or script trying to read scan-vulnerabilities.cve
 #     --dont-output-result              don't output result into console, only into file
 #     -i, --image string                only this image will be checked. Example: -i kapistka/log4shell:0.0.3-nonroot
 #     --ignore-errors                   ignore vulners errors (instead, write to $ERROR_FILE)
@@ -45,10 +45,10 @@ debug_set() {
     fi
 }
 
-INPUT_FILE=$SCRIPTPATH'/scan-vulnerabilities.cve'
-JSON_FILE=$SCRIPTPATH'/scan-vulners-com.json'
-RES_FILE=$SCRIPTPATH'/scan-vulners-com.result'
-ERROR_FILE=$SCRIPTPATH'/scan-vulners-com.error'
+INPUT_FILE=$OUT_DIR'/scan-vulnerabilities.cve'
+JSON_FILE=$OUT_DIR'/scan-vulners-com.json'
+RES_FILE=$OUT_DIR'/scan-vulners-com.result'
+ERROR_FILE=$OUT_DIR'/scan-vulners-com.error'
 eval "rm -f $RES_FILE $ERROR_FILE"
 touch $RES_FILE
 
@@ -90,17 +90,17 @@ while true ; do
             case "$2" in
                 "") shift 1 ;;
                 *) IGNORE_ERRORS=true ; shift 1 ;;
-            esac ;; 
+            esac ;;
         -i|--image)
             case "$2" in
                 "") shift 2 ;;
                 *) IMAGE_LINK=$2 ; shift 2 ;;
-            esac ;;    
+            esac ;;
         --vulners-key)
             case "$2" in
                 "") shift 2 ;;
                 *) debug_set false ; VULNERS_API_KEY=$2 ; debug_set true ; shift 2 ;;
-            esac ;; 
+            esac ;;
         --) shift ; break ;;
         *) echo "Wrong usage! Try '$0 --help' for more information." ; exit 2 ;;
     esac
@@ -129,20 +129,20 @@ EOF
         EXPL=`jq '.data.documents."'$1'".enchantments.exploitation.wildExploited' $JSON_FILE`
         EPSS=`jq '.data.documents."'$1'".epss[0].epss' $JSON_FILE`
         CVSS=`jq '.data.documents."'$1'".cvss.score' $JSON_FILE`
-    else 
+    else
         error_exit "error vulners.com: please check api-key, internet connection and retry"
-    fi 
+    fi
     if [ $? -ne 0 ]; then
         error_exit "error vulners.com: please check api-key, internet connection and retry"
-    fi 
+    fi
     if [ ! -z "$RESPONSE_ERROR" ]; then
         error_exit "error vulners.com: $RESPONSE_ERROR"
     fi
-    
+
     # output result
     if [ "$DONT_OUTPUT_RESULT" == "false" ]; then
         echo "$1: EXPL=$EXPL, EPSS=$EPSS, CVSS=$CVSS"
-    fi    
+    fi
     echo "$EXPL" >> $RES_FILE
 }
 
@@ -159,9 +159,9 @@ else
         do
            get_cve_info ${LIST_CVE[$i]}
         done
-    else 
+    else
         error_exit "$INPUT_FILE not found"
-    fi      
+    fi
 fi
 
 exit 0

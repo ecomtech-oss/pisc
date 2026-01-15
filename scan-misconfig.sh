@@ -73,7 +73,7 @@ if [[ "$-" == *x* ]]; then
     DEBUG='-x '
 fi
 
-RES_FILE=$SCRIPTPATH'/scan-misconfig.result'
+RES_FILE=$OUT_DIR'/scan-misconfig.result'
 rm -f $RES_FILE
 touch $RES_FILE
 
@@ -115,7 +115,7 @@ fi
 
 echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan misconfiguration\033[0K\r"
 
-for f in "$SCRIPTPATH/image"/*.json
+for f in "$OUT_DIR/image"/*.json
 do
     for (( i=0; i<${#MISCONFIG_REGEX[@]}; i++ ));
     do

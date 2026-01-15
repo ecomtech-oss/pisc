@@ -34,11 +34,11 @@ if [[ "$-" == *x* ]]; then
     DEBUG_CURL='-v '
 fi
 
-INPUT_FILE=$SCRIPTPATH'/scan-vulnerabilities.cve'
-DB_FILE=$SCRIPTPATH'/epss.csv'
-GZ_FILE=$SCRIPTPATH'/epss.csv.gz'
-RES_FILE=$SCRIPTPATH'/epss.result'
-ERROR_FILE=$SCRIPTPATH'/epss.error'
+INPUT_FILE=$OUT_DIR'/scan-vulnerabilities.cve'
+DB_FILE=$OUT_DIR'/.cache/epss.csv'
+GZ_FILE=$OUT_DIR'/epss.csv.gz'
+RES_FILE=$OUT_DIR'/epss.result'
+ERROR_FILE=$OUT_DIR'/epss.error'
 eval "rm -f $RES_FILE $ERROR_FILE"
 touch $RES_FILE
 

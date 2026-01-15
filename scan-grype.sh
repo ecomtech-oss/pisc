@@ -43,20 +43,20 @@ debug_set() {
 }
 
 # default tar path
-INPUT_FILE=$SCRIPTPATH/image.tar
+INPUT_FILE=$OUT_DIR/image.tar
 # grype output
-CSV_FILE=$SCRIPTPATH'/scan-grype.csv'
+CSV_FILE=$OUT_DIR'/scan-grype.csv'
 # result this script for main output
-RES_FILE=$SCRIPTPATH'/scan-grype.result'
+RES_FILE=$OUT_DIR'/scan-grype.result'
 # error file
-ERROR_FILE=$SCRIPTPATH'/scan-grype.error'
+ERROR_FILE=$OUT_DIR'/scan-grype.error'
 # template file
 TMPL_FILE=$SCRIPTPATH'/grype.tmpl'
 eval "rm -f $CSV_FILE $RES_FILE $ERROR_FILE"
 touch $RES_FILE
-
+export GRYPE_DB_CACHE_DIR="${OUT_DIR}/.cache/grype/db"
 # exception handling
-error_exit() 
+error_exit()
 {
     if  [ "$IS_ERROR" = false ]; then
         IS_ERROR=true
@@ -111,7 +111,7 @@ if [ "$OFFLINE_FEEDS" = true ] ; then
     export GRYPE_DB_AUTO_UPDATE=false
 else
     export GRYPE_DB_AUTO_UPDATE=true
-fi 
+fi
 
 # use one-string template
 

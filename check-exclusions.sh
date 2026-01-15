@@ -14,12 +14,12 @@
 #   cve:
 #     - "CVE-2025-1234"
 #     - "CVE-2025-5678"
-# 
+#
 # - misconfig:
 #     - "*"
 #   image:
 #     - "docker.io/php:*"
-# 
+#
 # - malware:
 #     - "*"
 #   image:
@@ -60,7 +60,7 @@ set -Eeo pipefail
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 EXCLUSIONS_FILE=$SCRIPTPATH'/whitelist.yaml'
-ERROR_FILE=$SCRIPTPATH'/check-exclusions.error'
+ERROR_FILE=$OUT_DIR'/check-exclusions.error'
 
 # if whitelist not found then exit 0
 if [ ! -f $EXCLUSIONS_FILE ]; then
@@ -72,7 +72,7 @@ IMAGE_LINK=''
 SEARCH_KEY=''
 SEARCH_VALUE=''
 
-error_exit() 
+error_exit()
 {
     printf "   $1" > $ERROR_FILE
     exit 2
