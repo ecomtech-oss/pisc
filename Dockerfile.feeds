@@ -22,4 +22,5 @@ RUN TODAY=$(date -u +%F) \
 
 RUN mkdir -p ${GRYPE_DB_CACHE_DIR} ${TRIVY_CACHE_DIR} \
   && grype db update \
-  && trivy --cache-dir ${TRIVY_CACHE_DIR} image --download-db-only
+  && trivy --cache-dir ${TRIVY_CACHE_DIR} image --download-db-only \
+  && chown -R 65532:65532 /opt/db
