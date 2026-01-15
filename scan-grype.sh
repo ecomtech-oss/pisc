@@ -21,6 +21,7 @@ IMAGE_LINK=''
 IS_ERROR=false
 OFFLINE_FEEDS=false
 RESULT_MESSAGE=''
+export TMPDIR="/tmp"
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
@@ -54,7 +55,6 @@ ERROR_FILE=$OUT_DIR'/scan-grype.error'
 TMPL_FILE=$SCRIPTPATH'/grype.tmpl'
 eval "rm -f $CSV_FILE $RES_FILE $ERROR_FILE"
 touch $RES_FILE
-export GRYPE_DB_CACHE_DIR="${OUT_DIR}/.cache/grype/db"
 # exception handling
 error_exit()
 {
@@ -107,10 +107,13 @@ done
 echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan vulnerabilities by grype\033[0K\r"
 
 # offline mode
-if [ "$OFFLINE_FEEDS" = true ] ; then
+if [[ "$OFFLINE_FEEDS" = true ]] && [[ -d "/opt/db/grype" ]]; then
     export GRYPE_DB_AUTO_UPDATE=false
 else
     export GRYPE_DB_AUTO_UPDATE=true
+    export GRYPE_DB_CACHE_DIR=$OUT_DIR'/.cache/grype/db'
+    echo -e "\033[0;33mInvalid flag --offline-feeds, DB Grype is empty and will be downloaded\033[0m"
+    mkdir -p "$GRYPE_DB_CACHE_DIR"
 fi
 
 # use one-string template

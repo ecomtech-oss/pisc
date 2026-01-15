@@ -93,6 +93,7 @@ VULNERS_API_KEY=''
 FILE_SCAN=''
 IS_LIST_IMAGES=false
 OUT_DIR="/tmp"
+OFFLINE_FEEDS_DIR=$OUT_DIR'/.cache'
 
 C_BLU='\033[1;34m'
 C_GRN='\033[1;32m'
@@ -194,7 +195,7 @@ while true ; do
         --offline-feeds)
             case "$2" in
                 "") shift 1 ;;
-                *) OFFLINE_FEEDS_FLAG='--offline-feeds' ; shift 1 ;;
+                *) OFFLINE_FEEDS_FLAG='--offline-feeds' ; OFFLINE_FEEDS_DIR="/opt/db"; shift 1 ;;
             esac ;;
         --scanner)
             case "$2" in
@@ -248,7 +249,7 @@ while true ; do
 done
 
 export OUT_DIR="${OUT_DIR}"
-
+export TMPDIR=$OUT_DIR
 # remove exclusions-cache-csv, exploits-info
 eval "rm -f $OUT_DIR/whitelist.yaml.csv *.expl"
 
@@ -305,6 +306,13 @@ fi
 if [ "$CHECK_EXPLOITS" = false ] && [ "$CHECK_DATE" = false ] &&  [ "$CHECK_LATEST" = false ] && [ "$CHECK_MISCONFIG" = false ] && [ -z "$VIRUSTOTAL_API_KEY" ]; then
     echo "Nothing check.  Try '$0 --help' for more information."
     exit 2
+fi
+#check directory exists and not empty
+if [ "$OFFLINE_FEEDS_DIR" == "/opt/db" ] && [ -d "$OFFLINE_FEEDS_DIR" ] && [ "$(ls -A "$OFFLINE_FEEDS_DIR")" ]; then
+  export OFFLINE_FEEDS_DIR=$OFFLINE_FEEDS_DIR
+else
+  export OFFLINE_FEEDS_DIR=$OUT_DIR'/.cache'
+  echo -e "$C_YLW Invalid flag --offline-feeds, DB is empty and will be downloaded\033[0m"
 fi
 debug_set true
 

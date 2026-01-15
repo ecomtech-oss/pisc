@@ -5,7 +5,7 @@
 # Usage
 #     ./scan-inthewild-io.sh [--cve cve_id] [--dont-output-result] [-i image_link]
 # Available options:
-#     --cve string                      specify single cve else script trying to read scan-vulnerabilities.cve 
+#     --cve string                      specify single cve else script trying to read scan-vulnerabilities.cve
 #     --dont-output-result              don't output result into console, only into file
 #     -i, --image string                only this image will be checked. Example: -i kapistka/log4shell:0.0.3-nonroot
 #     --ignore-errors                   ignore inthewild errors (instead, write to $ERROR_FILE)
@@ -36,7 +36,7 @@ fi
 
 INPUT_FILE=$OUT_DIR'/scan-vulnerabilities.cve'
 JSON_FILE=$OUT_DIR'/scan-inthewild-io.json'
-DB_FILE=$OUT_DIR'/.cache/inthewild.db'
+DB_FILE=$OFFLINE_FEEDS_DIR'/inthewild.db'
 RES_FILE=$OUT_DIR'/scan-inthewild-io.result'
 ERROR_FILE=$OUT_DIR'/scan-inthewild-io.error'
 eval "rm -f $RES_FILE $ERROR_FILE"
@@ -68,7 +68,7 @@ while true ; do
             case "$2" in
                 "") shift 2 ;;
                 *) CVE=$2 ; shift 2 ;;
-            esac ;; 
+            esac ;;
         --dont-output-result)
             case "$2" in
                 "") shift 1 ;;
@@ -78,7 +78,7 @@ while true ; do
             case "$2" in
                 "") shift 1 ;;
                 *) IGNORE_ERRORS=true ; shift 1 ;;
-            esac ;; 
+            esac ;;
         -i|--image)
             case "$2" in
                 "") shift 2 ;;
@@ -98,7 +98,7 @@ get_cve_info()
 {
     EXPL='false'
     if  [ "$IS_ERROR" = false ]; then
-        mapfile -t EXPLOITS < <(sqlite3 -column "$DB_FILE" "SELECT type,timeStamp,referenceURL FROM exploits WHERE id = '$1';")
+        mapfile -t EXPLOITS < <(sqlite3 -column "file:$DB_FILE?mode=ro&immutable=1" "SELECT type,timeStamp,referenceURL FROM exploits WHERE id = '$1';")
         if [[ ${#EXPLOITS[@]} -gt 0 ]]; then
             EXPL=true
             rm -rf "$OUT_DIR/$1.expl"
@@ -119,11 +119,11 @@ get_cve_info()
             done
         fi
     fi
-    
+
     # output result
     if [ "$DONT_OUTPUT_RESULT" == "false" ]; then
         echo "$1: EXPL=$EXPL"
-    fi    
+    fi
     echo "$EXPL" >> $RES_FILE
 }
 
@@ -164,9 +164,9 @@ else
         do
            get_cve_info ${LIST_CVE[$i]}
         done
-    else 
+    else
         error_exit "$INPUT_FILE not found"
-    fi      
+    fi
 fi
 
 exit 0
