@@ -5,7 +5,7 @@
 set -Eeo pipefail
 
 version() {
-    echo v0.18.1
+    echo v0.18.2
 }
 
 usage() {
