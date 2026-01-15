@@ -120,7 +120,7 @@ done
 
 # offline mode
 if [[ "$OFFLINE_FEEDS" = true ]] && [[ -d "/opt/db/trivy" ]]; then
-    OFFLINE_FEEDS_FLAG='--skip-db-update --skip-java-db-update --skip-check-update'
+    OFFLINE_FEEDS_FLAG='--skip-db-update'
 if (touch "/opt/db/grype/.check_rw" ) 2>/dev/null; then
     OFFLINE_FEEDS_DIR=$OFFLINE_FEEDS_DIR'/trivy'
   else
