@@ -108,12 +108,21 @@ echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan vulnerabilities by grype\03
 
 # offline mode
 if [[ "$OFFLINE_FEEDS" = true ]] && [[ -d "/opt/db/grype" ]]; then
-    export GRYPE_DB_AUTO_UPDATE=false
+  export GRYPE_DB_AUTO_UPDATE=false
+  if (touch "/opt/db/grype/.check_rw" ) 2>/dev/null; then
+    export GRYPE_DB_CACHE_DIR=/opt/db/grype
+  else
+    export GRYPE_DB_CACHE_DIR="$OUT_DIR"'/.cache/grype'
+    if [[ ! -d "$GRYPE_DB_CACHE_DIR" ]]; then
+      mkdir -p "$OUT_DIR"'/.cache/grype' && cp -r /opt/db/grype/ "$OUT_DIR"'/.cache/'
+    fi
+  fi
 else
     export GRYPE_DB_AUTO_UPDATE=true
-    export GRYPE_DB_CACHE_DIR=$OUT_DIR'/.cache/grype/db'
+    export GRYPE_DB_CACHE_DIR=$OUT_DIR'/.cache/grype'
     echo -e "\033[0;33mInvalid flag --offline-feeds, DB Grype is empty and will be downloaded\033[0m"
     mkdir -p "$GRYPE_DB_CACHE_DIR"
+
 fi
 
 # use one-string template

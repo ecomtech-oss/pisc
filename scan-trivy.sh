@@ -119,9 +119,16 @@ while true ; do
 done
 
 # offline mode
-if [[ "$OFFLINE_FEEDS" = true ]] && [[ -d "/opt/db/trivy" ]] && (touch "/opt/db/trivy/.check_rw" ) 2>/dev/null; then
+if [[ "$OFFLINE_FEEDS" = true ]] && [[ -d "/opt/db/trivy" ]]; then
     OFFLINE_FEEDS_FLAG='--skip-db-update --skip-java-db-update --skip-check-update'
+if (touch "/opt/db/grype/.check_rw" ) 2>/dev/null; then
     OFFLINE_FEEDS_DIR=$OFFLINE_FEEDS_DIR'/trivy'
+  else
+    OFFLINE_FEEDS_DIR="$OUT_DIR"'/.cache/trivy'
+    if [[ ! -d "$OFFLINE_FEEDS_DIR" ]]; then
+      mkdir -p "$OUT_DIR"'/.cache/trivy' && cp -r /opt/db/trivy "$OUT_DIR"'/.cache/'
+    fi
+  fi
 else
     OFFLINE_FEEDS_FLAG=''
     OFFLINE_FEEDS_DIR=$OUT_DIR'/.cache/trivy'
