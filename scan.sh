@@ -308,7 +308,7 @@ if [ "$CHECK_EXPLOITS" = false ] && [ "$CHECK_DATE" = false ] &&  [ "$CHECK_LATE
     exit 2
 fi
 #check directory exists and not empty
-if [ "$OFFLINE_FEEDS_DIR" == "/opt/db" ] && [ -d "$OFFLINE_FEEDS_DIR" ] && [ "$(ls -A "$OFFLINE_FEEDS_DIR")" ]; then
+if [ "$OFFLINE_FEEDS_DIR" == "/opt/db" ] && [ -d "$OFFLINE_FEEDS_DIR" ] && [ "$(ls -A "$OFFLINE_FEEDS_DIR"|wc -l)" != "0" ]; then
   export OFFLINE_FEEDS_DIR=$OFFLINE_FEEDS_DIR
 else
   export OFFLINE_FEEDS_DIR=$OUT_DIR'/.cache'
