@@ -120,7 +120,6 @@ if [[ "$OFFLINE_FEEDS" = true ]] && [[ -d "/opt/db/grype" ]]; then
 else
     export GRYPE_DB_AUTO_UPDATE=true
     export GRYPE_DB_CACHE_DIR=$OUT_DIR'/.cache/grype'
-    echo -e "\033[0;33mInvalid flag --offline-feeds, DB Grype is empty and will be downloaded\033[0m"
     mkdir -p "$GRYPE_DB_CACHE_DIR"
 
 fi

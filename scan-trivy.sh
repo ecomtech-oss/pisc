@@ -121,8 +121,8 @@ done
 # offline mode
 if [[ "$OFFLINE_FEEDS" = true ]] && [[ -d "/opt/db/trivy" ]]; then
     OFFLINE_FEEDS_FLAG='--skip-db-update'
-if (touch "/opt/db/grype/.check_rw" ) 2>/dev/null; then
-    OFFLINE_FEEDS_DIR=$OFFLINE_FEEDS_DIR'/trivy'
+  if  (touch "/opt/db/trivy/.check_rw" ) 2>/dev/null; then
+      OFFLINE_FEEDS_DIR=$OFFLINE_FEEDS_DIR'/trivy'
   else
     OFFLINE_FEEDS_DIR="$OUT_DIR"'/.cache/trivy'
     if [[ ! -d "$OFFLINE_FEEDS_DIR" ]]; then
@@ -132,7 +132,6 @@ if (touch "/opt/db/grype/.check_rw" ) 2>/dev/null; then
 else
     OFFLINE_FEEDS_FLAG=''
     OFFLINE_FEEDS_DIR=$OUT_DIR'/.cache/trivy'
-    echo -e "\033[0;33mInvalid flag --offline-feeds, DB tryvy is empty and will be downloaded\033[0m"
     mkdir -p "$OFFLINE_FEEDS_DIR"
 fi
 echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan vulnerabilities by trivy\033[0K\r"
