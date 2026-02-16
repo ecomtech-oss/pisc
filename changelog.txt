@@ -3,6 +3,8 @@ Added
     The option to specify a directory for temporary files using --output-dir has been introduced.
     By default, this directory is set to /tmp.
     This enhancement allows the container's root file system to be run as read-only.
+
+v0.18.1
 Changed
     Trivy 0.68.2
     Grype 0.104.3

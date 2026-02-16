@@ -1,4 +1,4 @@
-FROM kapistka/pisc:v0.19.0-rc1
+FROM ecomtechoss/pisc:latest
 
 ENV GRYPE_DB_CACHE_DIR=/opt/db/grype \
   GRYPE_DB_AUTO_UPDATE=false \
@@ -12,18 +12,18 @@ RUN mkdir /opt/db && \
 RUN TODAY=$(date -u +%F) \
   && YESTERDAY=$(date -u -d "-1 day" +%F) \
   && if curl -sSL --fail "https://epss.empiricalsecurity.com/epss_scores-${TODAY}.csv.gz" -o /tmp/epss.csv.gz; then \
-  echo "Downloaded EPSS for ${TODAY}"; \
-  else \
-  curl -sSL --fail "https://epss.empiricalsecurity.com/epss_scores-${YESTERDAY}.csv.gz" -o /tmp/epss.csv.gz && \
-  echo "Downloaded EPSS for ${YESTERDAY}"; \
-  fi \
+       echo "Downloaded EPSS for ${TODAY}"; \
+     else \
+       curl -sSL --fail "https://epss.empiricalsecurity.com/epss_scores-${YESTERDAY}.csv.gz" -o /tmp/epss.csv.gz && \
+       echo "Downloaded EPSS for ${YESTERDAY}"; \
+     fi \
   && zcat /tmp/epss.csv.gz > /opt/db/epss.csv \
   && rm /tmp/epss.csv.gz
 
 RUN mkdir -p ${GRYPE_DB_CACHE_DIR} ${TRIVY_CACHE_DIR} \
-  && grype db update \
-  && trivy --cache-dir ${TRIVY_CACHE_DIR} image --download-db-only \
-  && chown -R 65532:65532 /opt/db
+    && grype db update \
+    && trivy --cache-dir ${TRIVY_CACHE_DIR} image --download-db-only \
+    && chown -R 65532:65532 /opt/db
 
 USER nonroot
 WORKDIR /home/nonroot
