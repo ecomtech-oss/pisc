@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2025
+# Author: @kapistka, 2026
 
 # Usage
 #     ./scan-trivy.sh [-i image_link | --tar /path/to/private-image.tar]
@@ -22,12 +22,15 @@ IGNORE_ERRORS=false
 IMAGE_LINK=''
 IS_ERROR=false
 RESULT_MESSAGE=''
+OFFLINE_FEEDS=false
 OFFLINE_FEEDS_FLAG=''
 TRIVY_SERVER=''
 TRIVY_TOKEN=''
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# get exported var with default value if it is empty
+: "${OUT_DIR:=/tmp}"
 # check debug mode to debug child scripts
 DEBUG=''
 DEBUG_TRIVY='2>/dev/null'
@@ -47,20 +50,20 @@ debug_set() {
 }
 
 # default tar path
-INPUT_FILE=$SCRIPTPATH/image.tar
+INPUT_FILE=$OUT_DIR/image.tar
 # trivy output
-CSV_FILE=$SCRIPTPATH'/scan-trivy.csv'
+CSV_FILE=$OUT_DIR'/scan-trivy.csv'
 # result this script for main output
-RES_FILE=$SCRIPTPATH'/scan-trivy.result'
+RES_FILE=$OUT_DIR'/scan-trivy.result'
 # error file
-ERROR_FILE=$SCRIPTPATH'/scan-trivy.error'
+ERROR_FILE=$OUT_DIR'/scan-trivy.error'
 # template file
 TMPL_FILE=$SCRIPTPATH'/trivy.tmpl'
 eval "rm -f $CSV_FILE $RES_FILE $ERROR_FILE"
 touch $RES_FILE
 
 # exception handling
-error_exit() 
+error_exit()
 {
     if  [ "$IS_ERROR" = false ]; then
         IS_ERROR=true
@@ -87,7 +90,7 @@ while true ; do
             case "$2" in
                 "") shift 1 ;;
                 *) IGNORE_ERRORS=true ; shift 1 ;;
-            esac ;; 
+            esac ;;
         -i|--image)
             case "$2" in
                 "") shift 2 ;;
@@ -96,18 +99,18 @@ while true ; do
         --offline-feeds)
             case "$2" in
                 "") shift 1 ;;
-                *) OFFLINE_FEEDS_FLAG='--skip-db-update' ; shift 1 ;;
+                *) OFFLINE_FEEDS=true ; shift 1 ;;
             esac ;;
         --tar)
             case "$2" in
                 "") shift 2 ;;
                 *) INPUT_FILE=$2 ; shift 2 ;;
-            esac ;;    
+            esac ;;
         --trivy-server)
             case "$2" in
                 "") shift 2 ;;
                 *) TRIVY_SERVER=$2 ; shift 2 ;;
-            esac ;;  
+            esac ;;
         --trivy-token)
             case "$2" in
                 "") shift 2 ;;
@@ -118,6 +121,22 @@ while true ; do
     esac
 done
 
+# offline mode
+if [[ "$OFFLINE_FEEDS" = true ]] && [[ -d "/opt/db/trivy" ]]; then
+    OFFLINE_FEEDS_FLAG='--skip-db-update'
+  if  (touch "/opt/db/trivy/.check_rw" ) 2>/dev/null; then
+      OFFLINE_FEEDS_DIR=$OFFLINE_FEEDS_DIR'/trivy'
+  else
+    OFFLINE_FEEDS_DIR="$OUT_DIR"'/.cache/trivy'
+    if [[ ! -d "$OFFLINE_FEEDS_DIR" ]]; then
+      mkdir -p "$OUT_DIR"'/.cache/trivy' && cp -r /opt/db/trivy "$OUT_DIR"'/.cache/'
+    fi
+  fi
+else
+    OFFLINE_FEEDS_FLAG=''
+    OFFLINE_FEEDS_DIR=$OUT_DIR'/.cache/trivy'
+    mkdir -p "$OFFLINE_FEEDS_DIR"
+fi
 echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan vulnerabilities by trivy\033[0K\r"
 
 # use template
@@ -138,12 +157,12 @@ echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan vulnerabilities by trivy\03
 debug_set false
 if [ -z "$TRIVY_TOKEN" ]; then
     debug_set true
-    eval "trivy image --scanners vuln $OFFLINE_FEEDS_FLAG --format template --template @$TMPL_FILE -o $CSV_FILE --input $INPUT_FILE $DEBUG_TRIVY" || \
+    eval "trivy image --cache-dir $OFFLINE_FEEDS_DIR --scanners vuln $OFFLINE_FEEDS_FLAG --format template --template @$TMPL_FILE -o $CSV_FILE --input $INPUT_FILE $DEBUG_TRIVY" || \
     error_exit "error trivy client"
 # if trivy-token is specified, then we use the trivy-server
 else
-    eval "trivy image --scanners vuln $OFFLINE_FEEDS_FLAG --format template --template @$TMPL_FILE -o $CSV_FILE --input $INPUT_FILE --server $TRIVY_SERVER --token $TRIVY_TOKEN --timeout 15m $DEBUG_TRIVY" || \
-    eval "trivy image --scanners vuln $OFFLINE_FEEDS_FLAG --format template --template @$TMPL_FILE -o $CSV_FILE --input $INPUT_FILE $DEBUG_TRIVY" || \
+    eval "trivy image --cache-dir $OFFLINE_FEEDS_DIR --scanners vuln $OFFLINE_FEEDS_FLAG --format template --template @$TMPL_FILE -o $CSV_FILE --input $INPUT_FILE --server $TRIVY_SERVER --token $TRIVY_TOKEN --timeout 15m $DEBUG_TRIVY" || \
+    eval "trivy image --cache-dir $OFFLINE_FEEDS_DIR --scanners vuln $OFFLINE_FEEDS_FLAG --format template --template @$TMPL_FILE -o $CSV_FILE --input $INPUT_FILE $DEBUG_TRIVY" || \
     error_exit "error trivy server/client"
 fi
 debug_set true

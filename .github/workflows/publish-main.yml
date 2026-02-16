@@ -1,0 +1,77 @@
+name: Build and Push Docker image on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [ main ]
+
+jobs:
+  build-test-push:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Extract PR title and create tag
+      id: extract_tag
+      run: |
+        PR_TITLE="${{ github.event.pull_request.title }}"
+        TAG=$(echo "$PR_TITLE" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' | head -1)
+        if [ -z "$TAG" ]; then
+          echo "No tag found in PR title"
+          exit 1
+        fi
+        echo "RELEASE_TAG=$TAG" >> $GITHUB_OUTPUT
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USER }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build Docker image from Dockerfile
+      run: |
+        docker build --no-cache -f Dockerfile -t pisc:temp .
+
+    - name: Run tests
+      env:
+        VT_API_KEY: ${{ secrets.VT_API_KEY }}
+      run: |
+        chmod +x ./test-image.sh
+        ./test-image.sh pisc:temp
+
+    - name: Create and push Git tag
+      run: |
+        set -euo pipefail
+        TAG=${{ steps.extract_tag.outputs.RELEASE_TAG }}
+        
+        # Create and push tag
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git tag -a "$TAG" -m "Release $TAG"
+        git push origin "$TAG"
+
+    - name: Tag and push Docker images
+      run: |
+        set -euo pipefail
+
+        USER=${{ secrets.DOCKERHUB_USER }}
+        TAG=${{ steps.extract_tag.outputs.RELEASE_TAG }}
+
+        docker tag pisc:temp $USER/pisc:${TAG}
+        docker tag pisc:temp $USER/pisc:latest
+
+        echo "Pushing image: $USER/pisc:${TAG}"
+        docker push $USER/pisc:${TAG}
+
+        echo "Pushing image: $USER/pisc:latest"
+        docker push $USER/pisc:latest

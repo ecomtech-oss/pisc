@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2025
+# Author: @kapistka, 2026
 
 # Usage:
 #   ./test-image.sh <image>
@@ -17,10 +17,13 @@
 set -Eeo pipefail
 
 IMAGE="${1:-}"
+# get exported var with default value if it is empty
+: "${OUT_DIR:=/tmp}"
+
 if [[ -z "$IMAGE" ]]; then
     echo "Usage: $0 <image>"
-    echo "Example: $0 kapistka/pisc:v0.18.0"
-    echo "         $0 kapistka/pisc:v0.18.0-feeds"
+    echo "Example: $0 kapistka/pisc:v0.19.0"
+    echo "         $0 kapistka/pisc:v0.19.0-feeds"
     exit 2
 elif [[ "$IMAGE" != *"feeds"* ]]; then
     OFFLINE_FLAG=''
@@ -45,44 +48,44 @@ echo "run $IMAGE"
 
 set +e
 docker run --rm \
-    -v "$INPUT_FILE":/home/nonroot/images.txt \
+    -v "$INPUT_FILE":$OUT_DIR"/images.txt" \
     "$IMAGE" \
-    /bin/bash /home/nonroot/scan.sh -delm "$OFFLINE_FLAG" --virustotal-key "$VT_API_KEY" -f /home/nonroot/images.txt \
+    /bin/bash /home/nonroot/scan.sh -delm "$OFFLINE_FLAG" --virustotal-key "$VT_API_KEY" -f $OUT_DIR"/images.txt" \
     2>&1 | tee "$LOG_FILE"
 EXIT_CODE=$?
 set -e
 
 if [[ $EXIT_CODE -eq 0 ]]; then
-  echo "Scan return good result - it is problem"
-  echo "Exit code = $EXIT_CODE"
-  exit $EXIT_CODE
+    echo "Scan return good result - it is problem"
+    echo "Exit code = $EXIT_CODE"
+    exit $EXIT_CODE
 elif [[ $EXIT_CODE -eq 1 ]]; then
-  echo "Scan finished with no errors"
+    echo "Scan finished with no errors"
 else
-  echo "Scan Errors (exit $EXIT_CODE)."
-  grep -i "error" "$LOG_FILE" && echo "Check log: $LOG_FILE"
-  echo "Exit code = $EXIT_CODE"
-  exit $EXIT_CODE
+    echo "Scan Errors (exit $EXIT_CODE)."
+    grep -i "error" "$LOG_FILE" && echo "Check log: $LOG_FILE"
+    echo "Exit code = $EXIT_CODE"
+    exit $EXIT_CODE
 fi
 
 echo "Checking good content..."
 REQUIRED=("virustotal detected" "exploitable vulnerabilities" "dangerous misconfiguration" "created: " "newer tags")
 for pattern in "${REQUIRED[@]}"; do
-  if ! grep -q "$pattern" "$LOG_FILE"; then
-    echo "Missing expected pattern: $pattern"
-    echo "Exit code = 2"
-    exit 2
-  fi
+    if ! grep -q "$pattern" "$LOG_FILE"; then
+        echo "Missing expected pattern: $pattern"
+        echo "Exit code = 2"
+        exit 2
+    fi
 done
 
 echo "Checking for errors..."
 BAD=("error")
 for pattern in "${BAD[@]}"; do
-  if grep -q "$pattern" "$LOG_FILE"; then
-    echo "Found error pattern: $pattern"
-    echo "Exit code = 2"
-    exit 2
-  fi
+    if grep -q "$pattern" "$LOG_FILE"; then
+        echo "Found error pattern: $pattern"
+        echo "Exit code = 2"
+        exit 2
+    fi
 done
 
 echo "Test passed!"

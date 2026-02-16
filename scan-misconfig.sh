@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2025
+# Author: @kapistka, 2026
 
 # Usage
 #     ./scan-misconfig.sh [--dont-output-result] [-i image_link | --tar /path/to/private-image.tar]
@@ -67,13 +67,15 @@ EMOJI_DOCKER='\U1F433' # whale
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# get exported var with default value if it is empty
+: "${OUT_DIR:=/tmp}"
 # check debug mode to debug child scripts
 DEBUG=''
 if [[ "$-" == *x* ]]; then
     DEBUG='-x '
 fi
 
-RES_FILE=$SCRIPTPATH'/scan-misconfig.result'
+RES_FILE=$OUT_DIR'/scan-misconfig.result'
 rm -f $RES_FILE
 touch $RES_FILE
 
@@ -115,7 +117,7 @@ fi
 
 echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> scan misconfiguration\033[0K\r"
 
-for f in "$SCRIPTPATH/image"/*.json
+for f in "$OUT_DIR/image"/*.json
 do
     for (( i=0; i<${#MISCONFIG_REGEX[@]}; i++ ));
     do

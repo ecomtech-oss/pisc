@@ -1,11 +1,11 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2025
+# Author: @kapistka, 2026
 
 # Usage
 #     ./scan-inthewild-io.sh [--cve cve_id] [--dont-output-result] [-i image_link]
 # Available options:
-#     --cve string                      specify single cve else script trying to read scan-vulnerabilities.cve 
+#     --cve string                      specify single cve else script trying to read scan-vulnerabilities.cve
 #     --dont-output-result              don't output result into console, only into file
 #     -i, --image string                only this image will be checked. Example: -i kapistka/log4shell:0.0.3-nonroot
 #     --ignore-errors                   ignore inthewild errors (instead, write to $ERROR_FILE)
@@ -28,17 +28,19 @@ OFFLINE_FEEDS=false
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# get exported var with default value if it is empty
+: "${OUT_DIR:=/tmp}"
 # check debug mode to debug child scripts and external tools
 DEBUG_CURL='-sf '
 if [[ "$-" == *x* ]]; then
     DEBUG_CURL='-v '
 fi
 
-INPUT_FILE=$SCRIPTPATH'/scan-vulnerabilities.cve'
-JSON_FILE=$SCRIPTPATH'/scan-inthewild-io.json'
-DB_FILE=$SCRIPTPATH'/inthewild.db'
-RES_FILE=$SCRIPTPATH'/scan-inthewild-io.result'
-ERROR_FILE=$SCRIPTPATH'/scan-inthewild-io.error'
+INPUT_FILE=$OUT_DIR'/scan-vulnerabilities.cve'
+JSON_FILE=$OUT_DIR'/scan-inthewild-io.json'
+DB_FILE=$OFFLINE_FEEDS_DIR'/inthewild.db'
+RES_FILE=$OUT_DIR'/scan-inthewild-io.result'
+ERROR_FILE=$OUT_DIR'/scan-inthewild-io.error'
 eval "rm -f $RES_FILE $ERROR_FILE"
 touch $RES_FILE
 
@@ -68,7 +70,7 @@ while true ; do
             case "$2" in
                 "") shift 2 ;;
                 *) CVE=$2 ; shift 2 ;;
-            esac ;; 
+            esac ;;
         --dont-output-result)
             case "$2" in
                 "") shift 1 ;;
@@ -78,7 +80,7 @@ while true ; do
             case "$2" in
                 "") shift 1 ;;
                 *) IGNORE_ERRORS=true ; shift 1 ;;
-            esac ;; 
+            esac ;;
         -i|--image)
             case "$2" in
                 "") shift 2 ;;
@@ -98,10 +100,10 @@ get_cve_info()
 {
     EXPL='false'
     if  [ "$IS_ERROR" = false ]; then
-        mapfile -t EXPLOITS < <(sqlite3 -column "$DB_FILE" "SELECT type,timeStamp,referenceURL FROM exploits WHERE id = '$1';")
+        mapfile -t EXPLOITS < <(sqlite3 -column "file:$DB_FILE?mode=ro&immutable=1" "SELECT type,timeStamp,referenceURL FROM exploits WHERE id = '$1';")
         if [[ ${#EXPLOITS[@]} -gt 0 ]]; then
             EXPL=true
-            rm -rf "$SCRIPTPATH/$1.expl"
+            rm -rf "$OUT_DIR/$1.expl"
             for ((ii=0; ii<${#EXPLOITS[@]}; ii+=1)); do
                 TYPE=$(echo "${EXPLOITS[$ii]}" | awk '{print $1}')
                 EXPLOITS[$ii]=$(echo "${EXPLOITS[$ii]}" | sed -E 's/^[^ ]+ +//')
@@ -115,15 +117,15 @@ get_cve_info()
                 else
                     EXPLOITS[$ii]="       ${EXPLOITS[$ii]}"
                 fi
-                echo "${EXPLOITS[$ii]}" >> "$SCRIPTPATH/$1.expl"
+                echo "${EXPLOITS[$ii]}" >> "$OUT_DIR/$1.expl"
             done
         fi
     fi
-    
+
     # output result
     if [ "$DONT_OUTPUT_RESULT" == "false" ]; then
         echo "$1: EXPL=$EXPL"
-    fi    
+    fi
     echo "$EXPL" >> $RES_FILE
 }
 
@@ -143,7 +145,7 @@ fi
 if  [ "$IS_CACHED" = false ]; then
     echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> downloading inthewild db\033[0K\r"
     rm -f $DB_FILE
-    curl $DEBUG_CURL -L https://pub-4c1eae2a180542b19ea7c88f1e4ccf07.r2.dev/inthewild.db \
+    curl --connect-timeout 10 $DEBUG_CURL -L https://pub-4c1eae2a180542b19ea7c88f1e4ccf07.r2.dev/inthewild.db \
             -o $DB_FILE \
             || error_exit "error r2.dev: please check internet connection and retry"
 
@@ -164,9 +166,9 @@ else
         do
            get_cve_info ${LIST_CVE[$i]}
         done
-    else 
+    else
         error_exit "$INPUT_FILE not found"
-    fi      
+    fi
 fi
 
 exit 0

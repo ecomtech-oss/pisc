@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2025
+# Author: @kapistka, 2026
 
 # Usage
 #     ./scan-virustotal.sh [--dont-adv-search] [--dont-output-result] [-i image_link | --tar /path/to/private-image.tar] --virustotal-key API_KEY
@@ -91,6 +91,8 @@ EMOJI_CODES=(
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# get exported var with default value if it is empty
+: "${OUT_DIR:=/tmp}"
 # check debug mode to debug child scripts and external tools
 DEBUG=''
 DEBUG_CURL='-sf '
@@ -118,17 +120,17 @@ debug_null() {
 }
 
 
-IMAGE_DIR=$SCRIPTPATH'/image'
-ADVANCED_DIR=$SCRIPTPATH'/advanced'
+IMAGE_DIR=$OUT_DIR'/image'
+ADVANCED_DIR=$OUT_DIR'/advanced'
 
-JSON_RELATIONSHIP_FILE=$SCRIPTPATH'/virustotal-rel.json'
-JSON_SEARCH_FILE=$SCRIPTPATH'/virustotal.json'
-URL_FILE=$SCRIPTPATH'/virustotal-url.json'
-UPLOAD_JSON_FILE=$SCRIPTPATH'/virustotal-upload.json'
-RES_FILE=$SCRIPTPATH'/scan-virustotal.result'
-TMP_FILE=$SCRIPTPATH'/virustotal.tmp'
-SORT_FILE=$SCRIPTPATH'/virustotal.sort'
-ERROR_FILE=$SCRIPTPATH'/scan-virustotal.error'
+JSON_RELATIONSHIP_FILE=$OUT_DIR'/virustotal-rel.json'
+JSON_SEARCH_FILE=$OUT_DIR'/virustotal.json'
+URL_FILE=$OUT_DIR'/virustotal-url.json'
+UPLOAD_JSON_FILE=$OUT_DIR'/virustotal-upload.json'
+RES_FILE=$OUT_DIR'/scan-virustotal.result'
+TMP_FILE=$OUT_DIR'/virustotal.tmp'
+SORT_FILE=$OUT_DIR'/virustotal.sort'
+ERROR_FILE=$OUT_DIR'/scan-virustotal.error'
 eval "rm -f $RES_FILE $ERROR_FILE"
 
 # exception handling
@@ -236,7 +238,7 @@ hash_search() {
     # increasing the request counter (this method is limited by the number per minute/day/month)
     REQUEST_COUNT=$((REQUEST_COUNT+1)) 
     debug_set false
-    curl $DEBUG_CURL --request GET \
+    curl --connect-timeout 10 $DEBUG_CURL --request GET \
         --url "https://www.virustotal.com/api/v3/search?query=$1" \
         --header "x-apikey: $API_KEY" \
         -o "$JSON_SEARCH_FILE" \
@@ -268,7 +270,7 @@ hash_search() {
 analysis_search() {
     SEARCH_RESULT='upload'
     debug_set false
-    curl $DEBUG_CURL --request GET \
+    curl --connect-timeout 10 $DEBUG_CURL --request GET \
         --url "https://www.virustotal.com/api/v3/analyses/$1" \
         --header "x-apikey: $API_KEY" \
         -o "$JSON_SEARCH_FILE" \
@@ -304,7 +306,7 @@ relationship_search() {
     # increasing the request counter (this method is limited by the number per minute/day/month)
     REQUEST_COUNT=$((REQUEST_COUNT+1)) 
     debug_set false
-    curl $DEBUG_CURL --request GET \
+    curl --connect-timeout 10 $DEBUG_CURL --request GET \
         --url "https://www.virustotal.com/api/v3/files/$1/bundled_files?limit=40" \
         --header "x-apikey: $API_KEY" \
         -o "$JSON_RELATIONSHIP_FILE" \
@@ -412,7 +414,7 @@ upload() {
         else
             # this method is not limited to a free account, so we do not include waiting
             debug_set false
-            curl $DEBUG_CURL --request GET \
+            curl --connect-timeout 10 $DEBUG_CURL --request GET \
                 --url https://www.virustotal.com/api/v3/files/upload_url \
                 --header "x-apikey: $API_KEY" \
                 -o "$URL_FILE" \
@@ -429,7 +431,7 @@ upload() {
         # method returns the id of the uploaded file
 
         debug_set false
-        curl $DEBUG_CURL --request POST \
+        curl --connect-timeout 10 $DEBUG_CURL --request POST \
             --url "$UPLOAD_URL" \
             --header "accept: application/json" \
             --header "content-type: multipart/form-data" \

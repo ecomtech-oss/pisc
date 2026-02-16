@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2025
+# Author: @kapistka, 2026
 
 # Usage
 #     ./scan-new-tags.sh [--dont-output-result] -i image_link
@@ -31,6 +31,8 @@ EMOJI_INFO='\U1F4A1' # bulb
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# get exported var with default value if it is empty
+: "${OUT_DIR:=/tmp}"
 # check debug mode to debug child scripts and external tools
 DEBUG_SKOPEO=''
 if [[ "$-" == *x* ]]; then
@@ -38,15 +40,15 @@ if [[ "$-" == *x* ]]; then
 fi
 
 # result of skopeo inspect of source image (don't remove)
-JSON_FILE=$SCRIPTPATH'/inspect.json'
+JSON_FILE=$OUT_DIR'/inspect.json'
 # result of skopeo inspect of new-version images
-JSON_TEMP_FILE=$SCRIPTPATH'/inspect-temp.json'
+JSON_TEMP_FILE=$OUT_DIR'/inspect-temp.json'
 # result output
-RES_FILE=$SCRIPTPATH'/scan-new-tags.result'
+RES_FILE=$OUT_DIR'/scan-new-tags.result'
 #temp version file after sorting
-SORT_FILE=$SCRIPTPATH'/scan-new-tags.sort'
+SORT_FILE=$OUT_DIR'/scan-new-tags.sort'
 #temp version file before sorting
-TMP_FILE=$SCRIPTPATH'/scan-new-tags.tmp'
+TMP_FILE=$OUT_DIR'/scan-new-tags.tmp'
 rm -f $JSON_TEMP_FILE $RES_FILE $SORT_FILE $TMP_FILE
 
 SKOPEO_AUTH_FLAG=''

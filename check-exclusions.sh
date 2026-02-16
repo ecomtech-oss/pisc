@@ -1,9 +1,9 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2025
+# Author: @kapistka, 2026
 
 # Notes:
-# The script checks exclusions listed in the whitelist.yaml file located in the script's directory.
+# The script checks exclusions listed in the $EXCLUSIONS_FILE file (whitelist.yaml by default).
 # The file format supports YAML syntax. Each exclusion rule applies to the specified image only.
 # Ensure that only one exclusion criterion (cve, package, malware, misconfig, days, tag) is used per rule to maintain clarity.
 
@@ -14,12 +14,12 @@
 #   cve:
 #     - "CVE-2025-1234"
 #     - "CVE-2025-5678"
-# 
+#
 # - misconfig:
 #     - "*"
 #   image:
 #     - "docker.io/php:*"
-# 
+#
 # - malware:
 #     - "*"
 #   image:
@@ -59,8 +59,11 @@ set -Eeo pipefail
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-EXCLUSIONS_FILE=$SCRIPTPATH'/whitelist.yaml'
-ERROR_FILE=$SCRIPTPATH'/check-exclusions.error'
+# get exported var with default value if it is empty
+: "${OUT_DIR:=/tmp}"
+: "${EXCLUSIONS_FILE:=$SCRIPTPATH/whitelist.yaml}"
+ERROR_FILE=$OUT_DIR'/check-exclusions.error'
+CSV_FILE=$OUT_DIR'/whitelist.csv'
 
 # if whitelist not found then exit 0
 if [ ! -f $EXCLUSIONS_FILE ]; then
@@ -72,7 +75,7 @@ IMAGE_LINK=''
 SEARCH_KEY=''
 SEARCH_VALUE=''
 
-error_exit() 
+error_exit()
 {
     printf "   $1" > $ERROR_FILE
     exit 2
@@ -115,12 +118,12 @@ declare -a VALUE_LIST
 declare -a IMAGE_LIST
 
 # csv cached and removed from parent script
-if [ ! -s $EXCLUSIONS_FILE'.csv' ]; then
+if [ ! -s $CSV_FILE ]; then
     IMAGE_LIST=()
     KEY_LIST=()
     VALUE_LIST=()
     # convert yaml to csv
-    yq -o=json '.[]' $EXCLUSIONS_FILE | jq -r '.image[] as $image | to_entries[] | select(.key != "image") | [($image), .key, .value[]] | @csv' | tr -d '"' > $EXCLUSIONS_FILE'.csv' \
+    yq -o=json '.[]' $EXCLUSIONS_FILE | jq -r '.image[] as $image | to_entries[] | select(.key != "image") | [($image), .key, .value[]] | @csv' | tr -d '"' > $CSV_FILE \
       || error_exit "check exclusions: yaml error"
     # read csv
     while IFS=, read -r image key value; do
@@ -141,15 +144,15 @@ if [ ! -s $EXCLUSIONS_FILE'.csv' ]; then
         IMAGE_LIST+=("$image")
         KEY_LIST+=("$key")
         VALUE_LIST+=("$value")
-    done < $EXCLUSIONS_FILE'.csv'
-    > $EXCLUSIONS_FILE'.csv'
+    done < $CSV_FILE
+    > $CSV_FILE
     # write csv extended
     for (( i=0; i<${#IMAGE_LIST[@]}; i++ ));
     do
         IFS=',' read -r -a A <<< "${VALUE_LIST[$i]}"
         for (( j=0; j<${#A[@]}; j++ ));
         do
-            echo "${IMAGE_LIST[$i]},${KEY_LIST[$i]},${A[$j]}" >> $EXCLUSIONS_FILE'.csv'
+            echo "${IMAGE_LIST[$i]},${KEY_LIST[$i]},${A[$j]}" >> $CSV_FILE
         done
     done
 fi
@@ -163,7 +166,7 @@ while IFS=',' read -r image key value; do
         IMAGE_LIST+=("$image")
         VALUE_LIST+=("$value")
     fi
-done < $EXCLUSIONS_FILE'.csv'
+done < $CSV_FILE
 
 # searching
 for (( i=0; i<${#IMAGE_LIST[@]}; i++ ));

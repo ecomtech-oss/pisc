@@ -1,6 +1,6 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2025
+# Author: @kapistka, 2026
 
 # Usage
 #     ./scan-download-unpack.sh [-i image_link | --tar /path/to/private-image.tar]
@@ -11,7 +11,7 @@
 # Examples
 # ./scan-download-unpack.sh -i gcr.io/distroless/base-debian11:nonroot-amd64
 
-# To authenticate in the registry, put file auth.json in script directory
+# To authenticate in the registry, put file auth.json in script directory or run ./scan.sh --auth-path
 # See format: https://github.com/containers/image/blob/main/docs/containers-auth.json.5.md#format
 
 # Example for user: oauth and password: ABCDEFG
@@ -42,6 +42,9 @@ DONT_DOWNLOAD=false
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+# get exported var with default value if it is empty
+: "${OUT_DIR:=/tmp}"
+: "${AUTH_FILE:=$SCRIPTPATH/auth.json}"
 # check debug mode to debug child scripts and external tools
 DEBUG_SKOPEO='> /dev/null 2>&1'
 DEBUG_TAR='2>/dev/null'
@@ -51,15 +54,14 @@ if [[ "$-" == *x* ]]; then
 fi
 # silent mode for external tools if not debug
 debug_null() {
-    if [[ "$-" != *x* ]]; then 
+    if [[ "$-" != *x* ]]; then
         eval &>/dev/null
-    fi    
+    fi
 }
 
-RES_FILE=$SCRIPTPATH'/scan-download-unpack.result'
+RES_FILE=$OUT_DIR'/scan-download-unpack.result'
 
 SKOPEO_AUTH_FLAG=''
-AUTH_FILE=$SCRIPTPATH'/auth.json'
 if [ -f "$AUTH_FILE" ]; then
     SKOPEO_AUTH_FLAG="--authfile=$AUTH_FILE"
 fi
@@ -70,17 +72,17 @@ eval set -- "$ARGS"
 
 # extract options and their arguments into variables.
 while true ; do
-    case "$1" in 
+    case "$1" in
         -i|--image)
             case "$2" in
                 "") shift 2 ;;
                 *) IMAGE_LINK=$2 ; shift 2 ;;
-            esac ;; 
+            esac ;;
         --tar)
             case "$2" in
                 "") shift 2 ;;
                 *) LOCAL_FILE=$2 ; shift 2 ;;
-            esac ;;      
+            esac ;;
         --) shift ; break ;;
         *) echo "Wrong usage! Try '$0 --help' for more information." ; exit 2 ;;
     esac
@@ -94,33 +96,33 @@ fi
 if [ -f $RES_FILE ]; then
     LAST_DOWNLOAD=$(<$RES_FILE)
     if [ "$LAST_DOWNLOAD" == "$IMAGE_LINK" ]; then
-        if [ -d "$SCRIPTPATH/image" ]; then
+        if [ -d "$OUT_DIR/image" ]; then
             exit 0
-        fi    
+        fi
     fi
-fi    
+fi
 
-if [ "$LOCAL_FILE" != "$SCRIPTPATH/image.tar" ]; then
-    `rm -f $SCRIPTPATH/image.tar` debug_null
-fi    
+if [ "$LOCAL_FILE" != "$OUT_DIR/image.tar" ]; then
+    `rm -f $OUT_DIR/image.tar` debug_null
+fi
 # copy image to archive
 if [ -z "$LOCAL_FILE" ]; then
     echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> copy\033[0K\r"
-    eval "skopeo copy docker://$IMAGE_LINK docker-archive:$SCRIPTPATH/image.tar $SKOPEO_AUTH_FLAG $DEBUG_SKOPEO" \
+    eval "skopeo --tmpdir ${OUT_DIR} copy docker://$IMAGE_LINK docker-archive:$OUT_DIR/image.tar $SKOPEO_AUTH_FLAG $DEBUG_SKOPEO" \
         || error_exit "$IMAGE_LINK >>> can't copy, check image name and tag"
-fi        
+fi
 
 echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> unpack image\033[0K\r"
 #Sometimes rm and tar occurs an error
 #Therefore disable error checking
 set +Eeo pipefail
 #Unpack to the folder "image"
-`rm -rf $SCRIPTPATH/image` debug_null
-`mkdir $SCRIPTPATH/image` debug_null
+`rm -rf $OUT_DIR/image` debug_null
+`mkdir $OUT_DIR/image` debug_null
 if [ -z "$LOCAL_FILE" ]; then
-    eval tar -xf $SCRIPTPATH/image.tar -C $SCRIPTPATH/image $DEBUG_TAR
+    eval tar -xf $OUT_DIR/image.tar -C $OUT_DIR/image $DEBUG_TAR
 else
-    eval tar -xf $LOCAL_FILE -C $SCRIPTPATH/image $DEBUG_TAR
+    eval tar -xf $LOCAL_FILE -C $OUT_DIR/image $DEBUG_TAR
 fi
 #Turning error checking back on
 set -Eeo pipefail
@@ -128,19 +130,19 @@ set -Eeo pipefail
 # convert docker-save-format to docker-archive-format
 if [ ! -z "$LOCAL_FILE" ]; then
     echo -ne "  $(date +"%H:%M:%S") $IMAGE_LINK >>> convert format\033[0K\r"
-    if [ -d "$SCRIPTPATH/image/blobs/sha256" ]; then
-        for f in "$SCRIPTPATH/image/blobs/sha256"/*
-        do    
-            MIME_TYPE=(`file --mime-type $f | awk '{print $2}'`) 
+    if [ -d "$OUT_DIR/image/blobs/sha256" ]; then
+        for f in "$OUT_DIR/image/blobs/sha256"/*
+        do
+            MIME_TYPE=(`file --mime-type $f | awk '{print $2}'`)
             filename="${f##*/}"
-            if [[ $MIME_TYPE == application/x-tar ]] ; then  
-                mv $f $SCRIPTPATH/image/$filename.tar
-            fi 
-            if [[ $MIME_TYPE == application/json ]] ; then  
-                mv $f $SCRIPTPATH/image/$filename.json
-            fi 
+            if [[ $MIME_TYPE == application/x-tar ]] ; then
+                mv $f $OUT_DIR/image/$filename.tar
+            fi
+            if [[ $MIME_TYPE == application/json ]] ; then
+                mv $f $OUT_DIR/image/$filename.json
+            fi
         done
-    fi 
+    fi
 fi
 
 echo "$IMAGE_LINK" > $RES_FILE

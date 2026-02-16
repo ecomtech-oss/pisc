@@ -1,18 +1,18 @@
 #!/bin/bash
 # Public OCI-Image Security Checker
-# Author: @kapistka, 2025
+# Author: @kapistka, 2026
 
 set -Eeo pipefail
 
 version() {
-    echo v0.18.0
+    echo v0.19.0
 }
 
 usage() {
     cat <<EOF
 
 Public OCI-Image Security Checker
-Author: @kapistka, 2025
+Author: @kapistka, 2026
 
                     ##         .
               ## ## ##        ==
@@ -23,35 +23,38 @@ Author: @kapistka, 2025
          |||||\        __/
           |||||\______/
 
-A command-line tool to assess the security of OCI container images.  
-Exits with code '1' if any of the following conditions are met:  
-  - The image contains malware.  
-  - The image has exploitable vulnerabilities.  
-  - The image has dangerous build misconfigurations.  
-  - The image is older than a specified number of days.  
+A command-line tool to assess the security of OCI container images.
+Exits with code '1' if any of the following conditions are met:
+  - The image contains malware.
+  - The image has exploitable vulnerabilities.
+  - The image has dangerous build misconfigurations.
+  - The image is older than a specified number of days.
   - The image uses a non-versioned tag (e.g., ':latest').
 
 Usage:
-  $(basename "${BASH_SOURCE[0]}") [flags] [-i IMAGE | -f FILE | --tar TARFILE]  
+  $(basename "${BASH_SOURCE[0]}") [flags] [-i IMAGE | -f FILE | --tar TARFILE]
 
 Flags:
+  --auth-file <string>            Path to the auth file (see 'scan-download-unpack.sh#L14')
   -d, --date                      Check image age against threshold (default: 365 days).
   --d-days <int>                  Custom threshold for build date check (in days). Example: '--d-days 180'.
   -e, --exploits                  Check for vulnerabilities with known exploits (using Trivy + Grype + inthewild.io + empiricalsecurity.com).
   --epss-and                      Use AND logic to combine EPSS score and exploit presence. If disabled, OR logic is applied (default: OR).
   --epss-min <float>              Minimum EPSS score threshold used for filtering vulnerabilities (default: 0.5).
-  -f, --file <string>             Batch scan images from file. Example: '-f images.txt'.
+  --exclusions-file <string>      Path to the exclusions file (see 'check-exclusion.sh#L5')
+  -f, --file <string>             Batch scan images from file. Example: '-f /path/to/images.txt'.
   -h, --help                      Display this help message.
   --ignore-errors                 Ignore errors from external tools and continue execution.
   -i, --image <string>            Single image to scan. Example: '-i r0binak/mtkpi:v1.4'.
   -l, --latest                    Detect non-versioned tags (e.g., ':latest').
   -m, --misconfig                 Scan for dangerous build misconfigurations.
   --offline-feeds                 Use a self-contained offline image with pre-downloaded vulnerability feeds (e.g., :latest-feeds).
+  --output-dir <string>           Output tmp and results file directory. Default /tmp. Example: '--output-dir /tmp'
   --scanner [trivy|grype|all]     Choose which scanner to use: Trivy, Grype, or both (default: all)
   --severity-min <string>         Minimal severity of vulnerabilities [UNKNOWN|LOW|MEDIUM|HIGH|CRITICAL] default [HIGH]
   --show-exploits                 Show exploit details
   --tar <string>                  Scan local TAR archive of image layers. Example: '--tar /path/to/private-image.tar'.
-  --trivy-server <string>         Trivy server endpoint URL. Example: '--trivy-server http://trivy.something.io:8080'. 
+  --trivy-server <string>         Trivy server endpoint URL. Example: '--trivy-server http://trivy.something.io:8080'.
   --trivy-token <string>          Authentication token for Trivy server. Example: '--trivy-token 0123456789abZ'.
   -v, --version                   Display version.
   --virustotal-key <string>       VirusTotal API key for malware scanning. Example: '--virustotal-key 0123456789abcdef'.
@@ -61,20 +64,18 @@ Examples:
   ./scan.sh --virustotal-key 0123456789abcdef -i r0binak/mtkpi:v1.3
   ./scan.sh -delm -i kapistka/log4shell:0.0.3-nonroot --virustotal-key 0123456789abcdef
   ./scan.sh -delm --trivy-server http://trivy.something.io:8080 --trivy-token 0123abZ --virustotal-key 0123456789abcdef -f images.txt
-
-Additional Notes:
-- To authenticate with a registry, refer to 'scan-download-unpack.sh#L14'.  
-- To configure exclusions for specific CVEs or other criteria, see 'check-exclusion.sh#L5'.
 EOF
 }
 
 # var init
+AUTH_FILE=''
 CHECK_DATE=false
 CHECK_EXPLOITS=false
 CHECK_LATEST=false
 CHECK_MISCONFIG=false
-EPSS_AND_FLAG=""
-EPSS_MIN="0.5"
+EPSS_AND_FLAG=''
+EPSS_MIN='0.5'
+EXCLUSIONS_FILE=''
 FLAG_IMAGE='-i'
 IGNORE_ERRORS_FLAG=''
 IMAGE_LINK=''
@@ -91,6 +92,8 @@ VIRUSTOTAL_API_KEY=''
 VULNERS_API_KEY=''
 FILE_SCAN=''
 IS_LIST_IMAGES=false
+OUT_DIR='/tmp'
+OFFLINE_FEEDS_DIR=$OUT_DIR'/.cache'
 
 C_BLU='\033[1;34m'
 C_GRN='\033[1;32m'
@@ -107,13 +110,11 @@ EMOJI_TAR='\U1F4E6'    # package
 EMOJI_LIST='\U1F4C3'   # page with curl
 EMOJI_DOCKER='\U1F433' # whale
 
-U_LINE2='\U02550\U02550\U02550\U02550\U02550\U02550\U02550\U02550'
+U_LINE2='\U02550\U02550\U02550\U02550\U02550\U02550\U02550\U02550\U02550'
 U_LINE=$U_LINE2$U_LINE2$U_LINE2$U_LINE2$U_LINE2$U_LINE2
 
 # it is important for run *.sh by ci-runner
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-# remove exclusions-cache-csv, exploits-info
-eval "rm -f $SCRIPTPATH/whitelist.yaml.csv *.expl"
 
 # check debug mode to debug child scripts and external tools
 DEBUG=''
@@ -133,27 +134,22 @@ debug_set() {
 
 # read the options
 debug_set false
-ARGS=$(getopt -o dehf:i:lmv --long date,epss-and,epss-min:,exploits,d-days:,help,file:,ignore-errors,image:,latest,misconfig,offline-feeds,scanner:,severity-min:,show-exploits,tar:,trivy-server:,trivy-token:,version,virustotal-key:,vulners-key: -n $0 -- "$@")
+ARGS=$(getopt -o dehf:i:lmv --long auth-file:,date,d-days:,epss-and,epss-min:,exclusions-file,exploits,file:,help,ignore-errors,image:,latest,misconfig,offline-feeds,output-dir:,scanner:,severity-min:,show-exploits,tar:,trivy-server:,trivy-token:,version,virustotal-key:,vulners-key: -n $0 -- "$@")
 eval set -- "$ARGS"
 debug_set true
 
 # extract options and their arguments into variables.
 while true ; do
     case "$1" in
+        --auth-file)
+            case "$2" in
+                "") shift 2 ;;
+                *) AUTH_FILE=$2 ; shift 2 ;;
+            esac ;;
         -d|--date)
             case "$2" in
                 "") shift 1 ;;
                 *) CHECK_DATE=true ; shift 1 ;;
-            esac ;; 
-        --epss-and)
-            case "$2" in
-                "") shift 1 ;;
-                *) EPSS_AND_FLAG="--epss-and" ; shift 1 ;;
-            esac ;;  
-        --epss-min)
-            case "$2" in
-                "") shift 2 ;;
-                *) EPSS_MIN=$2 ; shift 2 ;;
             esac ;;
         --d-days)
             case "$2" in
@@ -164,28 +160,43 @@ while true ; do
             case "$2" in
                 "") shift 1 ;;
                 *) CHECK_EXPLOITS=true ; shift 1 ;;
-            esac ;;    
-        -h|--help) usage ; exit 0;;
+            esac ;;
+        --epss-and)
+            case "$2" in
+                "") shift 1 ;;
+                *) EPSS_AND_FLAG="--epss-and" ; shift 1 ;;
+            esac ;;
+        --epss-min)
+            case "$2" in
+                "") shift 2 ;;
+                *) EPSS_MIN=$2 ; shift 2 ;;
+            esac ;;
+        --exclusions-file)
+            case "$2" in
+                "") shift 2 ;;
+                *) EXCLUSIONS_FILE=$2 ; shift 2 ;;
+            esac ;;
         -f|--file)
             case "$2" in
                 "") shift 2 ;;
                 *) FILE_SCAN=$2 ; CHECK_LOCAL=false ; shift 2 ;;
             esac ;;
+        -h|--help) usage ; exit 0;;
         --ignore-errors)
             case "$2" in
                 "") shift 1 ;;
                 *) IGNORE_ERRORS_FLAG='--ignore-errors' ; shift 1 ;;
-            esac ;; 
+            esac ;;
         -i|--image)
             case "$2" in
                 "") shift 2 ;;
                 *) IMAGE_LINK=$2 ; CHECK_LOCAL=false ; shift 2 ;;
-            esac ;;   
+            esac ;;
         -l|--latest )
             case "$2" in
                 "") shift 1 ;;
                 *) CHECK_LATEST=true ; shift 1 ;;
-            esac ;;     
+            esac ;;
         -m|--misconfig)
             case "$2" in
                 "") shift 1 ;;
@@ -194,70 +205,82 @@ while true ; do
         --offline-feeds)
             case "$2" in
                 "") shift 1 ;;
-                *) OFFLINE_FEEDS_FLAG='--offline-feeds' ; shift 1 ;;
+                *) OFFLINE_FEEDS_FLAG='--offline-feeds' ; OFFLINE_FEEDS_DIR="/opt/db"; shift 1 ;;
+            esac ;;
+        --output-dir)
+            case "$2" in
+                "") shift 2 ;;
+                *) OUT_DIR=$2 ; OFFLINE_FEEDS_DIR=$OUT_DIR'/.cache' ; shift 2 ;;
             esac ;;
         --scanner)
             case "$2" in
                 "") shift 2 ;;
                 *) SCANNER=$2 ; shift 2 ;;
-            esac ;; 
+            esac ;;
         --severity-min)
             case "$2" in
                 "") shift 2 ;;
                 *) SEVERITY=$2 ; shift 2 ;;
-            esac ;; 
+            esac ;;
         --show-exploits)
             case "$2" in
                 "") shift 1 ;;
                 *) SHOW_EXPLOITS_FLAG='--show-exploits' ; shift 1 ;;
-            esac ;;  
+            esac ;;
         --tar)
             case "$2" in
                 "") shift 2 ;;
                 *) LOCAL_FILE=$2 ; shift 2 ;;
-            esac ;;   
+            esac ;;
         --trivy-server)
             case "$2" in
                 "") shift 2 ;;
                 *) TRIVY_SERVER=$2 ; CHECK_EXPLOITS=true ; shift 2 ;;
-            esac ;;  
+            esac ;;
         --trivy-token)
             case "$2" in
                 "") shift 2 ;;
                 *)  debug_set false ; TRIVY_TOKEN=$2 ; debug_set true ; CHECK_EXPLOITS=true ; shift 2 ;;
-            esac ;; 
-        -v|--version) version ; exit 0;;    
+            esac ;;
+        -v|--version) version ; exit 0;;
         --virustotal-key)
             case "$2" in
                 "") shift 2 ;;
                 *) debug_set false ; VIRUSTOTAL_API_KEY=$2 ; debug_set true ; shift 2 ;;
-            esac ;;   
+            esac ;;
         --vulners-key)
             case "$2" in
                 "") shift 2 ;;
                 *) debug_set false ; VULNERS_API_KEY=$2 ; debug_set true ; CHECK_EXPLOITS=true ; shift 2 ;;
-            esac ;;                           
+            esac ;;
         --) shift ; break ;;
         *) echo "Wrong usage! Try '$0 --help' for more information." ; exit 2 ;;
     esac
 done
 
+export OUT_DIR=$OUT_DIR
+# remove exclusions-cache-csv, exploits-info
+eval "rm -f $OUT_DIR/whitelist.yaml.csv $OUT_DIR/*.expl"
+
 # arguments check
 if [ ! -z "$FILE_SCAN" ]; then
-    if [ -f $FILE_SCAN ]; then
-        IS_LIST_IMAGES=true
-        LIST_IMAGES=()
-        LIST_IMAGES=(`awk '{print $1}' $FILE_SCAN`)
-    elif [ -f $SCRIPTPATH'/'$FILE_SCAN ]; then  
-        IS_LIST_IMAGES=true
-        LIST_IMAGES=()
-        LIST_IMAGES=(`awk '{print $1}' $SCRIPTPATH'/'$FILE_SCAN`)   
-    else
+    if [ -f $OUT_DIR'/'$FILE_SCAN ]; then
+        FILE_SCAN=$OUT_DIR'/'$FILE_SCAN
+    elif [ -f $SCRIPTPATH'/'$FILE_SCAN ]; then
+        FILE_SCAN=$SCRIPTPATH'/'$FILE_SCAN
+    fi
+    if [ ! -f $FILE_SCAN ]; then
         echo "$FILE_SCAN >>> File -f not found. Try '$0 --help' for more information."
         exit 2
+    else
+        IS_LIST_IMAGES=true
+        LIST_IMAGES=()
+        LIST_IMAGES=(`awk '{print $1}' $FILE_SCAN`)    
     fi
 elif [ ! -z "$LOCAL_FILE" ]; then
-    if [ -f $SCRIPTPATH'/'$LOCAL_FILE ]; then
+    if [ -f $OUT_DIR'/'$LOCAL_FILE ]; then
+        LOCAL_FILE=$OUT_DIR'/'$LOCAL_FILE
+    elif [ -f $SCRIPTPATH'/'$LOCAL_FILE ]; then
         LOCAL_FILE=$SCRIPTPATH'/'$LOCAL_FILE
     fi
     if [ ! -f $LOCAL_FILE ]; then
@@ -274,6 +297,35 @@ else
         exit 2
     fi
 fi
+# AUTH_FILE
+if [ ! -z "$AUTH_FILE" ]; then
+    if [ -f $OUT_DIR'/'$AUTH_FILE ]; then
+        AUTH_FILE=$OUT_DIR'/'$AUTH_FILE
+    elif [ -f $SCRIPTPATH'/'$AUTH_FILE ]; then
+        AUTH_FILE=$SCRIPTPATH'/'$AUTH_FILE`
+    fi
+    if [ ! -f $AUTH_FILE ]; then
+        echo "$AUTH_FILE >>> Auth file not found. Try '$0 --help' for more information."
+        exit 2
+    else
+        export AUTH_FILE=$AUTH_FILE
+    fi
+fi    
+# EXCLUSIONS_FILE
+if [ ! -z "$EXCLUSIONS_FILE" ]; then
+    if [ -f $OUT_DIR'/'$EXCLUSIONS_FILE ]; then
+        EXCLUSIONS_FILE=$OUT_DIR'/'$EXCLUSIONS_FILE
+    elif [ -f $SCRIPTPATH'/'$EXCLUSIONS_FILE ]; then
+        EXCLUSIONS_FILE=$SCRIPTPATH'/'$EXCLUSIONS_FILE`
+    fi
+    if [ ! -f $EXCLUSIONS_FILE ]; then
+        echo "$EXCLUSIONS_FILE >>> Exclusions file not found. Try '$0 --help' for more information."
+        exit 2
+    else
+        export EXCLUSIONS_FILE=$EXCLUSIONS_FILE
+    fi
+fi
+# SCANNERS
 if [[ "$SCANNER" != "trivy" && "$SCANNER" != "grype" && "$SCANNER" != "all" ]]; then
     echo "Invalid --scanner value: $SCANNER. Must be one of: trivy, grype, all. Try '$0 --help' for more information."
     exit 2
@@ -297,6 +349,15 @@ if [ "$CHECK_EXPLOITS" = false ] && [ "$CHECK_DATE" = false ] &&  [ "$CHECK_LATE
     exit 2
 fi
 debug_set true
+#check OFFLINE_FEEDS_DIR exists and not empty
+if [[ -z $OFFLINE_FEEDS_FLAG ]]; then
+    export OFFLINE_FEEDS_DIR=$OFFLINE_FEEDS_DIR
+elif [[ "$OFFLINE_FEEDS_DIR" == "/opt/db" ]] && [[ "$(ls -A "$OFFLINE_FEEDS_DIR"|wc -l)" != "0" ]]; then
+    export OFFLINE_FEEDS_DIR=$OFFLINE_FEEDS_DIR
+else
+    export OFFLINE_FEEDS_DIR=$OUT_DIR'/.cache'
+    echo -e "$C_YLW Invalid flag --offline-feeds, DB is empty and will be downloaded\033[0m"
+fi
 
 # check tools exist
 IS_TOOLS_NOT_EXIST=false
@@ -313,7 +374,7 @@ done
 if [ "$IS_TOOLS_NOT_EXIST" = true ] ; then
     echo "First you need to install these tools:$TOOLS_NOT_EXIST_STR"
     exit 3
-fi   
+fi
 
 # check GNU-version of tar
 if ! `tar --version | grep -q "GNU"`; then
@@ -324,7 +385,7 @@ fi
 # show enable/disable options
 echo -e "$U_LINE"
 if [ ! -z "$LOCAL_FILE" ]; then
-    echo -e "$EMOJI_TAR local file: $LOCAL_FILE"  
+    echo -e "$EMOJI_TAR local file: $LOCAL_FILE"
 elif [ "$IS_LIST_IMAGES" = true ]; then
     echo -e "$EMOJI_LIST images from list: $FILE_SCAN"
 elif [ ! -z "$IMAGE_LINK" ]; then
@@ -351,7 +412,7 @@ if [ "$CHECK_EXPLOITS" = true ] ; then
     if [ -z "$OFFLINE_FEEDS_FLAG" ]; then
         SCANNER_MSG=$SCANNER_MSG$'\n '"       feeds: online"
     else
-        SCANNER_MSG=$SCANNER_MSG$'\n '"       feeds: offline" 
+        SCANNER_MSG=$SCANNER_MSG$'\n '"       feeds: offline"
     fi
     SCANNER_MSG=$SCANNER_MSG$'\n '"       exploit filter: EPSS > $EPSS_MIN"
     if [ "$EPSS_AND_FLAG" = "" ] ; then
@@ -380,8 +441,8 @@ echo -e "   $EMOJI_OPT Check for non-versioned tags (e.g., :latest)"
 
 # single image scan
 scan_image() {
-    eval "rm -f $SCRIPTPATH/*.error"
-    
+    eval "rm -f $OUT_DIR/*.error"
+
     CREATED_DATE='1970-01-01'
     CREATED_DATE_LAST='1970-01-01'
     IS_EXCLUDED=false
@@ -422,28 +483,28 @@ scan_image() {
     # misconfigurations scanning
     if [ "$CHECK_MISCONFIG" = true ]; then
         /bin/bash $DEBUG$SCRIPTPATH/scan-misconfig.sh --dont-output-result $FLAG_IMAGE $IMAGE_LINK
-        MISCONFIG_RESULT_MESSAGE=$(<$SCRIPTPATH/scan-misconfig.result)
+        MISCONFIG_RESULT_MESSAGE=$(<$OUT_DIR/scan-misconfig.result)
         if [ "$MISCONFIG_RESULT_MESSAGE" != "OK" ] && [ "$MISCONFIG_RESULT_MESSAGE" != "OK (whitelisted)" ]; then
             IS_MISCONFIG=true
         elif [ "$MISCONFIG_RESULT_MESSAGE" == "OK (whitelisted)" ] ; then
             IS_EXCLUDED=true
-            EXCLUDED_STR="${EXCLUDED_STR:+$EXCLUDED_STR$'\n'}   misconfig whitelisted" 
+            EXCLUDED_STR="${EXCLUDED_STR:+$EXCLUDED_STR$'\n'}   misconfig whitelisted"
         fi
-    fi  
-    
+    fi
+
     # virustotal scanning
     debug_set false
     if [ ! -z "$VIRUSTOTAL_API_KEY" ]; then
         /bin/bash $DEBUG$SCRIPTPATH/scan-virustotal.sh --dont-output-result --virustotal-key $VIRUSTOTAL_API_KEY $FLAG_IMAGE $IMAGE_LINK $IGNORE_ERRORS_FLAG
-        VIRUSTOTAL_RESULT_MESSAGE=$(<$SCRIPTPATH/scan-virustotal.result)
+        VIRUSTOTAL_RESULT_MESSAGE=$(<$OUT_DIR/scan-virustotal.result)
         if [ "$VIRUSTOTAL_RESULT_MESSAGE" != "OK" ] && [ "$VIRUSTOTAL_RESULT_MESSAGE" != "OK (whitelisted)" ]; then
             IS_MALWARE=true
         elif [ "$VIRUSTOTAL_RESULT_MESSAGE" == "OK (whitelisted)" ] ; then
             IS_EXCLUDED=true
-            EXCLUDED_STR="${EXCLUDED_STR:+$EXCLUDED_STR$'\n'}   malware whitelisted" 
+            EXCLUDED_STR="${EXCLUDED_STR:+$EXCLUDED_STR$'\n'}   malware whitelisted"
         fi
     fi
-    debug_set true  
+    debug_set true
 
     # exploitable vulnerabilities scanning
     if [ "$CHECK_EXPLOITS" = true ]; then
@@ -457,22 +518,22 @@ scan_image() {
         fi
         /bin/bash $DEBUG$SCRIPTPATH/scan-vulnerabilities.sh --severity-min $SEVERITY $SHOW_EXPLOITS_FLAG $EPSS_AND_FLAG --epss-min $EPSS_MIN --dont-output-result $FLAG_IMAGE $IMAGE_LINK $PARAMS $IGNORE_ERRORS_FLAG
         debug_set true
-        VULNERABILITIES_RESULT_MESSAGE=$(<$SCRIPTPATH/scan-vulnerabilities.result)
+        VULNERABILITIES_RESULT_MESSAGE=$(<$OUT_DIR/scan-vulnerabilities.result)
         if [ "$VULNERABILITIES_RESULT_MESSAGE" != "OK" ] && [ "$VULNERABILITIES_RESULT_MESSAGE" != "OK (whitelisted)" ] ; then
             IS_EXPLOITABLE=true
             # force check date if it exploitable
             CHECK_DATE=true
         elif [ "$VULNERABILITIES_RESULT_MESSAGE" == "OK (whitelisted)" ] ; then
             IS_EXCLUDED=true
-            EXCLUDED_STR="${EXCLUDED_STR:+$EXCLUDED_STR$'\n'}   exploitable vulnerabilities whitelisted" 
-        fi  
+            EXCLUDED_STR="${EXCLUDED_STR:+$EXCLUDED_STR$'\n'}   exploitable vulnerabilities whitelisted"
+        fi
     fi
 
     # old build date checking
     # after exploits checking - force CHECK_DATE = true
     if [ "$CHECK_DATE" = true ]; then
         /bin/bash $DEBUG$SCRIPTPATH/scan-date.sh --dont-output-result $FLAG_IMAGE $IMAGE_LINK
-        CREATED_DATE=$(<$SCRIPTPATH/scan-date.result)
+        CREATED_DATE=$(<$OUT_DIR/scan-date.result)
         CREATED_DATE_LAST=$CREATED_DATE
         # was built more than N days ago
         if [ "$CREATED_DATE" != "0001-01-01" ] && [ "$CREATED_DATE" != "1970-01-01" ]; then
@@ -490,15 +551,15 @@ scan_image() {
             fi
             set -e
         fi
-    fi 
+    fi
 
     # candidates for a new image if it is outdated or there are exploits
     if [ -z "$LOCAL_FILE" ]; then
         if [ "$IS_OLD" = true ] ||  [ "$IS_EXPLOITABLE" = true ]; then
             /bin/bash $DEBUG$SCRIPTPATH/scan-new-tags.sh --dont-output-result -i $IMAGE_LINK
-            CREATED_DATE_LAST=`awk 'NR==1 {print; exit}' $SCRIPTPATH/scan-new-tags.result`
-            NEW_TAGS_RESULT_MESSAGE=`awk 'NR>1 {print}' $SCRIPTPATH/scan-new-tags.result`
-        fi 
+            CREATED_DATE_LAST=`awk 'NR==1 {print; exit}' $OUT_DIR/scan-new-tags.result`
+            NEW_TAGS_RESULT_MESSAGE=`awk 'NR>1 {print}' $OUT_DIR/scan-new-tags.result`
+        fi
     fi
 
     # result output
@@ -511,7 +572,7 @@ scan_image() {
     # echo misconfig result
     if [ "$IS_MISCONFIG" = true ]; then
         echo -e "$MISCONFIG_RESULT_MESSAGE"
-    fi  
+    fi
     # echo virustotal result
     if [ "$IS_MALWARE" = true ]; then
         echo -e "$VIRUSTOTAL_RESULT_MESSAGE"
@@ -532,7 +593,7 @@ scan_image() {
     fi
 
     # show ignored errors
-    LIST_ERRORS=($(find "$SCRIPTPATH" -name '*.error' -type f 2>/dev/null))
+    LIST_ERRORS=($(find "$OUT_DIR" -name '*.error' -type f 2>/dev/null))
     if (( ${#LIST_ERRORS[@]} > 0 )); then
         STR_ERRORS=''
         for (( i=0; i<${#LIST_ERRORS[@]}; i++ ));
@@ -582,5 +643,6 @@ elif [ "$IS_LIST_IMAGES" = true ]; then
 else
     scan_image "$IMAGE_LINK"
 fi
+
 
 exit $SCAN_RETURN_CODE
